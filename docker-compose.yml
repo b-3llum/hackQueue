@@ -1,0 +1,16 @@
+services:
+  bot:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # SQLite lives on the named volume below; migrations run at startup.
+      DATABASE_URL: sqlite+aiosqlite:///data/hackqueue.db
+      LOG_FORMAT: json
+    volumes:
+      - hackqueue-data:/app/data
+      # Uncomment to tune scoring without rebuilding:
+      # - ./scoring.toml:/app/scoring.toml:ro
+
+volumes:
+  hackqueue-data:
