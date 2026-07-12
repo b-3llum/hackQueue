@@ -165,3 +165,21 @@ async def test_ippsec_url_property(db, catalog):
     box = await catalog.find_box("lame")
     assert box.ippsec_url == "https://youtube.com/watch?v=abc"
     assert (await catalog.find_box("sniper")).ippsec_url is None
+
+
+async def test_owned_refs_ignores_challenge_solves(db, catalog):
+    """HTB challenge ids share a number space with machine ids — a challenge
+    solve must not exclude the unsolved machine with the same id."""
+    async with db.session() as session, session.begin():
+        link = AccountLink(
+            discord_user_id=7, platform="htb", platform_user_id="70", platform_username="x"
+        )
+        session.add(link)
+        await session.flush()
+        session.add(
+            Solve(link_id=link.id, platform="htb", item_ref="1", item_name="c", kind="challenge")
+        )
+        session.add(
+            Solve(link_id=link.id, platform="htb", item_ref="2", item_name="m", kind="user")
+        )
+    assert await catalog.owned_refs(7, "htb") == {"2"}

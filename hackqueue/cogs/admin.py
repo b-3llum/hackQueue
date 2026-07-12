@@ -123,6 +123,18 @@ class ConfigGroup(app_commands.Group, name="config", description="Configure hack
         )
         await interaction.response.send_message(message, ephemeral=True)
 
+    @app_commands.command(
+        name="purge-member",
+        description="Delete a member's manual claims in this server (incl. proof links)",
+    )
+    async def purge_member(self, interaction: discord.Interaction, member: discord.User) -> None:
+        count = await self.bot.claims.purge_user(interaction.guild_id, member.id)
+        await interaction.response.send_message(
+            f"🗑️ Deleted {count} claim(s) by {member.mention} in this server. "
+            "Platform links are removed separately via `/config unlink-member`.",
+            ephemeral=True,
+        )
+
 
 class AdminCog(commands.Cog):
     def __init__(self, bot: HackQueueBot) -> None:

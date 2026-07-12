@@ -77,7 +77,12 @@ class ClaimAction(
             )
             return
         cfg = bot.claims.platform(claim.platform_key)
-        embed = claim_embed(claim, cfg.name if cfg else claim.platform_key)
+        # Keep pointing at the proof re-uploaded on this message (if any) —
+        # editing the embed leaves the message's attachments untouched.
+        image_ref = None
+        if interaction.message and interaction.message.attachments:
+            image_ref = f"attachment://{interaction.message.attachments[0].filename}"
+        embed = claim_embed(claim, cfg.name if cfg else claim.platform_key, image_ref=image_ref)
         await interaction.response.edit_message(embed=embed, view=None)
         if claim.status == "approved":
             note = (
@@ -134,6 +139,14 @@ class ClaimsCog(commands.Cog):
                 ephemeral=True,
             )
             return
+        permissions = channel.permissions_for(interaction.guild.me)
+        if not (permissions.send_messages and permissions.embed_links):
+            await interaction.followup.send(
+                f"❌ I can't post in {channel.mention} (need Send Messages + Embed "
+                "Links there) — ask an admin to fix my permissions.",
+                ephemeral=True,
+            )
+            return
         try:
             claim = await self.bot.claims.create(
                 interaction.guild_id,
@@ -150,9 +163,32 @@ class ClaimsCog(commands.Cog):
         view = discord.ui.View(timeout=None)
         view.add_item(ClaimAction("approve", claim.id))
         view.add_item(ClaimAction("deny", claim.id))
-        message = await channel.send(
-            embed=claim_embed(claim, cfg.name if cfg else platform), view=view
-        )
+        # Re-upload the proof as a real attachment on the mod message —
+        # interaction attachment URLs are signed and expire within ~24h.
+        file: discord.File | None = None
+        image_ref: str | None = None
+        if proof is not None:
+            try:
+                file = await proof.to_file()
+                image_ref = f"attachment://{file.filename}"
+            except discord.HTTPException:
+                file = None  # proof unavailable; the claim stands on its own
+        embed = claim_embed(claim, cfg.name if cfg else platform, image_ref=image_ref)
+        try:
+            if file is not None:
+                message = await channel.send(embed=embed, view=view, file=file)
+            else:
+                message = await channel.send(embed=embed, view=view)
+        except discord.HTTPException:
+            # Mod message failed: roll the claim back or it would sit pending
+            # forever with no buttons and block resubmission.
+            await self.bot.claims.delete(claim.id)
+            await interaction.followup.send(
+                f"❌ Couldn't post your claim to {channel.mention} — nothing was "
+                "recorded. Ask an admin to check the channel and try again.",
+                ephemeral=True,
+            )
+            return
         await self.bot.claims.set_message(claim.id, message.id)
         await interaction.followup.send(
             f"📨 Claim for **{claim.item_name}** ({claim.difficulty}, {claim.points} pts) "

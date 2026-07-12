@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import random
-from datetime import UTC
+from datetime import UTC, timedelta
 
 import discord
 from sqlalchemy import func, select
@@ -90,9 +90,23 @@ class RecapService:
         log.info("recap_posted", guild_id=guild.guild_id, week=week_key)
 
     async def build_recap(self, guild_id: int) -> discord.Embed:
-        board = await self._boards.composite_board(guild_id, Period.WEEKLY)
-        start = period_start(Period.WEEKLY, utcnow())
+        # The recap covers the COMPLETED week: anchor the board just before
+        # this week's Monday 00:00 UTC so deltas span the previous Mon-Sun,
+        # and window solve counts to [previous Monday, this Monday).
+        this_week = period_start(Period.WEEKLY, utcnow())
+        assert this_week is not None
+        as_of = this_week - timedelta(seconds=1)
+        start = period_start(Period.WEEKLY, as_of)
         assert start is not None
+        board = await self._boards.composite_board(guild_id, Period.WEEKLY, as_of=as_of)
+        # Backfilled solves (a member's pre-link history imported on their
+        # first poll) are not news — exclude them or a Saturday /link floods
+        # Monday's recap with years-old solves.
+        window = (
+            Solve.first_seen_at >= start,
+            Solve.first_seen_at < this_week,
+            Solve.backfilled.is_(False),
+        )
         async with self._db.session() as session:
             solve_counts = {
                 platform: int(count)
@@ -103,7 +117,7 @@ class RecapService:
                         GuildMember,
                         GuildMember.discord_user_id == AccountLink.discord_user_id,
                     )
-                    .where(GuildMember.guild_id == guild_id, Solve.first_seen_at >= start)
+                    .where(GuildMember.guild_id == guild_id, *window)
                     .group_by(Solve.platform)
                 )
             }
@@ -118,9 +132,9 @@ class RecapService:
                     .where(
                         GuildMember.guild_id == guild_id,
                         Solve.first_blood.is_(True),
-                        Solve.first_seen_at >= start,
+                        *window,
                     )
                 )
             )
         box = await self._catalog.box_of_week()
-        return recap_embed(board, solve_counts, bloods, box)
+        return recap_embed(board, solve_counts, bloods, box, week_of=start)

@@ -8,7 +8,8 @@ WORKDIR /app
 
 COPY pyproject.toml README.md LICENSE ./
 COPY hackqueue ./hackqueue
-RUN pip install .
+# [postgres] so the same image works for SQLite (default) and Postgres
+RUN pip install '.[postgres]'
 
 # Default scoring config; override by mounting your own at /app/scoring.toml
 COPY scoring.toml ./scoring.toml

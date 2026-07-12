@@ -28,6 +28,9 @@ log = get_logger(__name__)
 
 RETRYABLE_STATUSES = frozenset({429, 500, 502, 503, 504})
 CHALLENGE_HEADER = "x-vercel-mitigated"
+#: What HttpClient.get raises when the network itself fails on every attempt.
+#: Callers that surface errors to users should catch this alongside AdapterError.
+NETWORK_ERRORS: tuple[type[Exception], ...] = (aiohttp.ClientError, TimeoutError)
 
 
 @dataclass(frozen=True)

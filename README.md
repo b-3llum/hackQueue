@@ -24,8 +24,8 @@ runs server leaderboards that reward *this week's grind*, not account age.
 - **Box recommendations** — `/suggest [difficulty] [os] [tag]` recommends HTB
   boxes you haven't solved, and `/box <name>` shows an info card with the
   matching [IppSec](https://ippsec.rocks) walkthrough video when one exists.
-- **Weekly recap** — optional Monday digest: top gainers, new solves, first
-  bloods, and a box of the week.
+- **Weekly recap** — optional Monday digest of the completed week: top
+  gainers, new solves, first bloods, and a box of the week.
 - **Profiles** — `/profile [@user]` shows all linked accounts, ranks, and
   recent solves.
 - **Ops-friendly** — `/health` for admins, structured logging, per-platform
@@ -146,13 +146,20 @@ accordingly in `scoring.toml`.
 
 ## Privacy
 
-The bot stores: your Discord user ID, the platform IDs/usernames you link,
-point/rank snapshots, and solve events for those accounts. Nothing else — no
-message content, no member lists.
+The bot stores:
+
+- your Discord user ID and the platform IDs/usernames you link,
+- point/rank snapshots and solve events for those accounts,
+- any manual claims you submit via `/solved` (box name, difficulty, a link to
+  the proof screenshot, and who reviewed it) — these are per-server records.
+
+No message content, no member lists.
 
 **Deleting your data:** `/unlink <platform>` immediately and permanently
-deletes that link with all its snapshots and solve history. Server admins can
-do the same for departed members via `/config unlink-member`.
+deletes that link with all its snapshots and solve history. Manual claims are
+server records reviewed by that server's moderators, so they're deleted by a
+server admin: `/config purge-member` removes all your claims in that server
+(and `/config unlink-member` covers links for departed members).
 
 ## Development
 

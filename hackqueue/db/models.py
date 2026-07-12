@@ -1,6 +1,7 @@
 """SQLAlchemy models. Links are global per Discord user; board membership is
-per guild; snapshots/solves hang off links so /unlink can purge everything a
-member ever gave us (the privacy guarantee in the README)."""
+per guild; snapshots/solves hang off links so /unlink purges them via cascade
+(the privacy guarantee in the README). Manual claims are guild submissions —
+not tied to a link — and are purged per-guild via /config purge-member."""
 
 from __future__ import annotations
 
@@ -137,6 +138,9 @@ class Solve(Base):
     solved_at: Mapped[datetime | None]
     first_blood: Mapped[bool] = mapped_column(Boolean, default=False)
     first_seen_at: Mapped[datetime] = mapped_column(default=utcnow)
+    #: True for solves imported on a link's FIRST poll (pre-link history) —
+    #: excluded from "new this week" counts in recaps.
+    backfilled: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class Claim(Base):

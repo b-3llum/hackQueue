@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 import discord
@@ -117,7 +118,10 @@ def profile_embed(
     return embed
 
 
-def claim_embed(claim: Claim, cfg_name: str) -> discord.Embed:
+def claim_embed(claim: Claim, cfg_name: str, image_ref: str | None = None) -> discord.Embed:
+    """``image_ref`` is an ``attachment://…`` reference to the proof re-uploaded
+    onto the mod message — interaction attachment URLs expire, so the message's
+    own attachment is the durable copy."""
     color = {"pending": COLOR_WARN, "approved": COLOR_OK, "denied": COLOR_ERROR}[claim.status]
     embed = discord.Embed(title=f"Claim: {claim.item_name}", color=color)
     embed.add_field(name="Platform", value=cfg_name)
@@ -127,9 +131,8 @@ def claim_embed(claim: Claim, cfg_name: str) -> discord.Embed:
     embed.add_field(name="Status", value=claim.status.title())
     if claim.reviewed_by:
         embed.add_field(name="Reviewed by", value=f"<@{claim.reviewed_by}>")
-    if claim.proof_url:
-        embed.add_field(name="Proof", value=f"[screenshot]({claim.proof_url})", inline=False)
-        embed.set_image(url=claim.proof_url)
+    if image_ref:
+        embed.set_image(url=image_ref)
     embed.set_footer(text=f"Claim #{claim.id}")
     return embed
 
@@ -178,8 +181,12 @@ def recap_embed(
     solve_counts: dict[str, int],
     bloods: list[Solve],
     box: CatalogBox | None,
+    week_of: datetime | None = None,
 ) -> discord.Embed:
-    embed = discord.Embed(title="📊 Weekly recap", color=COLOR_OK)
+    title = "📊 Weekly recap"
+    if week_of is not None:
+        title += f" — week of {week_of.date().isoformat()}"
+    embed = discord.Embed(title=title, color=COLOR_OK)
     if board.rows:
         lines = [
             f"{MEDALS[i] if i < 3 else f'`#{i + 1}`'} "

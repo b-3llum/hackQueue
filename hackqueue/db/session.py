@@ -47,7 +47,9 @@ class Database:
         """
         cfg = AlembicConfig()
         cfg.set_main_option("script_location", str(MIGRATIONS_DIR))
-        cfg.set_main_option("sqlalchemy.url", self.url)
+        # Alembic config values are configparser-interpolated: a literal "%"
+        # (e.g. percent-encoded DB credentials) must be doubled or this crashes.
+        cfg.set_main_option("sqlalchemy.url", self.url.replace("%", "%%"))
         await asyncio.to_thread(command.upgrade, cfg, "head")
         log.info("db_migrated", url=self.engine.url.render_as_string(hide_password=True))
 

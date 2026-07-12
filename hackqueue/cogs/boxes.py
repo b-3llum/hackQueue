@@ -68,9 +68,8 @@ class BoxesCog(commands.Cog):
         await interaction.response.defer()
         found = await self.bot.catalog.find_box(name)
         if found is None:
-            await interaction.followup.send(
-                f"No box matching **{name}** in the catalog.", ephemeral=True
-            )
+            # NB: can't be ephemeral — the flag is fixed by the earlier public defer.
+            await interaction.followup.send(f"No box matching **{name}** in the catalog.")
             return
         await interaction.followup.send(embed=box_embed(found))
 

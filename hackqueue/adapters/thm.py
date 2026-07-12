@@ -19,6 +19,7 @@ and why every URL lives in the constants block below.
 from __future__ import annotations
 
 from typing import Any, ClassVar
+from urllib.parse import quote
 
 from hackqueue.adapters.base import (
     Platform,
@@ -66,7 +67,7 @@ class THMAdapter(PlatformAdapter):
         username = user_ref.strip().lstrip("@")
         if not username or "/" in username:
             raise ProfileNotFound("That doesn't look like a TryHackMe username")
-        data = await self._get_checked(URL_DISCORD_USER.format(username=username))
+        data = await self._get_checked(URL_DISCORD_USER.format(username=_enc(username)))
         if not isinstance(data, dict) or "points" not in data:
             raise ProfileNotFound(f"TryHackMe user '{username}' not found")
         extra_ids = await self._try_capture_v2_ids(username)
@@ -75,7 +76,7 @@ class THMAdapter(PlatformAdapter):
         )
 
     async def get_profile(self, user: PlatformUser) -> ProfileStats:
-        data = await self._get_checked(URL_DISCORD_USER.format(username=user.user_id))
+        data = await self._get_checked(URL_DISCORD_USER.format(username=_enc(user.user_id)))
         if not isinstance(data, dict) or "points" not in data:
             raise ProfileNotFound(f"TryHackMe user '{user.user_id}' not found")
         counters: dict[str, int] = {}
@@ -100,7 +101,7 @@ class THMAdapter(PlatformAdapter):
         if not user_hash:
             return []
         try:
-            data = await self._get_checked(URL_COMPLETED_ROOMS.format(user_hash=user_hash))
+            data = await self._get_checked(URL_COMPLETED_ROOMS.format(user_hash=_enc(user_hash)))
         except (PlatformUnavailable, RateLimited, ProfileNotFound):
             return []
         rooms = data.get("data", data) if isinstance(data, dict) else data
@@ -129,7 +130,7 @@ class THMAdapter(PlatformAdapter):
         """Best-effort: v2 endpoints key on ids, not usernames — grab them now
         so solves can be fetched later even if this endpoint drifts."""
         try:
-            data = await self._get_checked(URL_PUBLIC_PROFILE.format(username=username))
+            data = await self._get_checked(URL_PUBLIC_PROFILE.format(username=_enc(username)))
         except (PlatformUnavailable, RateLimited, ProfileNotFound):
             return {}
         if not isinstance(data, dict):
@@ -150,7 +151,7 @@ class THMAdapter(PlatformAdapter):
 
     async def _try_completed_count(self, username: str) -> int | None:
         try:
-            data = await self._get_checked(URL_COMPLETED_COUNT.format(username=username))
+            data = await self._get_checked(URL_COMPLETED_COUNT.format(username=_enc(username)))
         except (PlatformUnavailable, RateLimited, ProfileNotFound):
             return None
         return _int_or_none(data)
@@ -174,6 +175,11 @@ class THMAdapter(PlatformAdapter):
             # 200 but not JSON => challenge page or shape drift; treat as outage
             raise PlatformUnavailable(CHALLENGE_MSG)
         raise PlatformUnavailable(f"TryHackMe returned HTTP {result.status}")
+
+
+def _enc(value: str) -> str:
+    """User-supplied identifiers must never reshape the URL (query/path injection)."""
+    return quote(value, safe="")
 
 
 def _int_or_none(value: Any) -> int | None:

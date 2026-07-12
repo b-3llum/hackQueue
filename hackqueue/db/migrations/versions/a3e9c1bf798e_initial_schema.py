@@ -144,6 +144,7 @@ def upgrade() -> None:
         sa.Column("solved_at", sa.DateTime(), nullable=True),
         sa.Column("first_blood", sa.Boolean(), nullable=False),
         sa.Column("first_seen_at", sa.DateTime(), nullable=False),
+        sa.Column("backfilled", sa.Boolean(), nullable=False),
         sa.ForeignKeyConstraint(["link_id"], ["account_links.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("link_id", "item_ref", "kind", name="uq_solve_link_item_kind"),

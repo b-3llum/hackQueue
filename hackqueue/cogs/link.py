@@ -10,6 +10,7 @@ from discord.ext import commands
 
 from hackqueue.adapters.base import PLATFORM_LABELS, AdapterError, Platform
 from hackqueue.adapters.rootme import RootMeAdapter
+from hackqueue.http.client import NETWORK_ERRORS
 from hackqueue.services.linking import LinkError
 
 if TYPE_CHECKING:
@@ -40,6 +41,12 @@ class LinkCog(commands.Cog):
             )
         except (LinkError, AdapterError) as exc:
             await interaction.followup.send(f"❌ {exc}", ephemeral=True)
+            return
+        except NETWORK_ERRORS:
+            await interaction.followup.send(
+                f"⚠ {platform.name} couldn't be reached right now — try again in a bit.",
+                ephemeral=True,
+            )
             return
         adapter = self.bot.adapters.get(plat)
         verify_hint = (
@@ -85,6 +92,12 @@ class LinkCog(commands.Cog):
         except (LinkError, AdapterError) as exc:
             await interaction.followup.send(f"❌ {exc}", ephemeral=True)
             return
+        except NETWORK_ERRORS:
+            await interaction.followup.send(
+                f"⚠ {platform.name} couldn't be reached right now — try again in a bit.",
+                ephemeral=True,
+            )
+            return
         if phase == "issued":
             message = (
                 f"🔑 Your verification token: `{token}`\n"
@@ -116,6 +129,12 @@ class LinkCog(commands.Cog):
             matches = await adapter.search_by_name(name)
         except AdapterError as exc:
             await interaction.followup.send(f"❌ {exc}", ephemeral=True)
+            return
+        except NETWORK_ERRORS:
+            await interaction.followup.send(
+                "⚠ Root-Me couldn't be reached right now — try again in a bit.",
+                ephemeral=True,
+            )
             return
         if not matches:
             await interaction.followup.send(f"No Root-Me users match **{name}**.", ephemeral=True)

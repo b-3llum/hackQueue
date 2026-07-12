@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import Any, ClassVar
+from urllib.parse import quote
 
 from hackqueue.adapters.base import (
     AuthExpired,
@@ -71,7 +72,9 @@ class RootMeAdapter(PlatformAdapter):
 
     async def search_by_name(self, name: str) -> list[tuple[str, str]]:
         """Search authors by name → [(author_id, nom)], to help users find their ID."""
-        result = await self._http.get(URL_AUTHOR_SEARCH.format(name=name), cookies=self._cookies)
+        result = await self._http.get(
+            URL_AUTHOR_SEARCH.format(name=quote(name, safe="")), cookies=self._cookies
+        )
         self._raise_for_status(result)
         entries = _numeric_key_items(_unwrap(result.data))
         return [

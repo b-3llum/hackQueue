@@ -51,3 +51,29 @@ async def test_denied_claim_can_be_resubmitted(claims):
     await claims.review(claim.id, approve=False, reviewer_id=99)
     again = await claims.create(GUILD, ALICE, "pg", "Nibbles", "easy", None)
     assert again.status == "pending"
+
+
+async def test_duplicate_check_treats_percent_as_literal(claims):
+    """User input must never act as a LIKE pattern: a claim named '%' must not
+    collide with every other claim."""
+    await claims.create(GUILD, ALICE, "pg", "Nibbles", "easy", None)
+    claim = await claims.create(GUILD, ALICE, "pg", "%", "easy", None)
+    assert claim.status == "pending"
+
+
+async def test_delete_removes_claim(claims):
+    claim = await claims.create(GUILD, ALICE, "pg", "Nibbles", "easy", None)
+    await claims.delete(claim.id)
+    assert await claims.get(claim.id) is None
+    # resubmission works — nothing orphaned
+    again = await claims.create(GUILD, ALICE, "pg", "Nibbles", "easy", None)
+    assert again.status == "pending"
+
+
+async def test_purge_user_scoped_to_guild(claims):
+    await claims.create(GUILD, ALICE, "pg", "Box1", "easy", None)
+    await claims.create(GUILD, ALICE, "pg", "Box2", "easy", None)
+    await claims.create(GUILD + 1, ALICE, "pg", "Box1", "easy", None)
+    assert await claims.purge_user(GUILD, ALICE) == 2
+    assert await claims.purge_user(GUILD, ALICE) == 0
+    assert await claims.purge_user(GUILD + 1, ALICE) == 1

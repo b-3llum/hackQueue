@@ -206,8 +206,10 @@ class CatalogService:
             )
 
     async def owned_refs(self, discord_user_id: int, platform: str) -> set[str]:
-        """item_refs this user has any solve event for (used to exclude owned
-        boxes from /suggest). HTB machine ids == catalog platform_refs."""
+        """item_refs this user owns boxes for (used to exclude owned boxes from
+        /suggest). HTB machine ids == catalog platform_refs. Challenge solves
+        are excluded: their ids share a number space with nothing in the
+        catalog and would wrongly exclude unsolved machines on collisions."""
         async with self._db.session() as session:
             rows = await session.execute(
                 select(Solve.item_ref)
@@ -215,6 +217,7 @@ class CatalogService:
                 .where(
                     AccountLink.discord_user_id == discord_user_id,
                     Solve.platform == platform,
+                    Solve.kind != "challenge",
                 )
             )
             return {ref for (ref,) in rows}

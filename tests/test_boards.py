@@ -167,3 +167,45 @@ async def test_pending_and_denied_claims_do_not_score(db, boards):
 async def test_empty_guild_board(db, boards):
     board = await boards.platform_board(GUILD, Platform.HTB, Period.WEEKLY)
     assert board.rows == []
+
+
+async def test_as_of_windowing_ignores_later_snapshots(db, boards):
+    """Anchoring a board in the past (the recap's completed-week view) must
+    ignore snapshots taken after the anchor."""
+    await seed(db)
+    week_start = period_start(Period.WEEKLY, utcnow())
+    board = await boards.platform_board(
+        GUILD, Platform.HTB, Period.WEEKLY, as_of=week_start + timedelta(hours=1)
+    )
+    # at +1h, alice has baseline(100) but her +12h snapshot is invisible; bob's
+    # first snapshot is at +6h — also invisible. Nobody has gains yet.
+    assert board.rows == []
+    # at +13h both later snapshots are visible again
+    board = await boards.platform_board(
+        GUILD, Platform.HTB, Period.WEEKLY, as_of=week_start + timedelta(hours=13)
+    )
+    assert [(r.discord_user_id, r.value) for r in board.rows] == [(1, 50.0), (2, 20.0)]
+
+
+async def test_claim_totals_exclude_hidden_and_non_members(db, boards):
+    async with db.session() as session, session.begin():
+        session.add(Guild(guild_id=GUILD))
+        session.add(GuildMember(guild_id=GUILD, discord_user_id=1))
+        session.add(GuildMember(guild_id=GUILD, discord_user_id=2, hidden=True))
+        await session.flush()
+        for uid in (1, 2, 3):  # 3 has claims but never joined the guild boards
+            session.add(
+                Claim(
+                    guild_id=GUILD,
+                    discord_user_id=uid,
+                    platform_key="pg",
+                    item_name=f"box-{uid}",
+                    difficulty="easy",
+                    points=10,
+                    status="approved",
+                    reviewed_by=9,
+                    reviewed_at=utcnow(),
+                )
+            )
+    board = await boards.claims_board(GUILD, Period.ALLTIME)
+    assert [r.discord_user_id for r in board.rows] == [1]

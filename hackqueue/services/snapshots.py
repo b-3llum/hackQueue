@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import random
 
+import aiohttp
 from sqlalchemy import select
 
 from hackqueue.adapters.base import (
@@ -105,6 +106,13 @@ class PollerService:
             except (RateLimited, PlatformUnavailable) as exc:
                 self._health.record_error(platform, exc)
                 return
+            except (aiohttp.ClientError, TimeoutError) as exc:
+                # Transport failure (DNS, TLS, timeout) — same treatment as an
+                # outage so /health and staleness markers reflect reality.
+                self._health.record_error(
+                    platform, PlatformUnavailable(f"network error: {exc or type(exc).__name__}")
+                )
+                return
             except ProfileNotFound as exc:
                 await self._set_link_status(
                     link.id, "private" if isinstance(exc, ProfilePrivate) else "not_found"
@@ -124,6 +132,13 @@ class PollerService:
             db_link.status = "ok"
             if stats.username and stats.username != db_link.platform_username:
                 db_link.platform_username = stats.username
+            # Solves seen on the very first poll are the member's pre-link
+            # history, not fresh activity — flag them so recaps skip them.
+            is_first_poll = (
+                await session.scalar(
+                    select(Snapshot.id).where(Snapshot.link_id == db_link.id).limit(1)
+                )
+            ) is None
             session.add(
                 Snapshot(
                     link_id=db_link.id,
@@ -155,6 +170,7 @@ class PollerService:
                             points=event.points,
                             solved_at=event.solved_at,
                             first_blood=event.first_blood,
+                            backfilled=is_first_poll,
                         )
                     )
 

@@ -7,7 +7,7 @@ and award their configured points only once a moderator approves them.
 
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
 
 from hackqueue.config import ClaimPlatformConfig, ScoringConfig
 from hackqueue.db.models import Claim, utcnow
@@ -61,7 +61,9 @@ class ClaimsService:
                     Claim.guild_id == guild_id,
                     Claim.discord_user_id == discord_user_id,
                     Claim.platform_key == platform_key,
-                    Claim.item_name.ilike(item_name),
+                    # exact case-insensitive match — NOT ilike: user input must
+                    # never act as a LIKE pattern ("%"/"_" would false-match)
+                    func.lower(Claim.item_name) == item_name.lower(),
                     Claim.status.in_(["pending", "approved"]),
                 )
             )
@@ -111,3 +113,23 @@ class ClaimsService:
     async def get(self, claim_id: int) -> Claim | None:
         async with self._db.session() as session:
             return await session.get(Claim, claim_id)
+
+    async def delete(self, claim_id: int) -> None:
+        """Remove a claim outright (e.g. its mod message could not be posted)."""
+        async with self._db.session() as session, session.begin():
+            await session.execute(delete(Claim).where(Claim.id == claim_id))
+
+    async def purge_user(self, guild_id: int, discord_user_id: int) -> int:
+        """Delete all of a user's claims in a guild (the claims half of the
+        data-deletion story; links/snapshots/solves go via /unlink)."""
+        async with self._db.session() as session, session.begin():
+            result = await session.execute(
+                delete(Claim).where(
+                    Claim.guild_id == guild_id,
+                    Claim.discord_user_id == discord_user_id,
+                )
+            )
+            count = result.rowcount
+        if count:
+            log.info("claims_purged", guild_id=guild_id, user=discord_user_id, count=count)
+        return count
