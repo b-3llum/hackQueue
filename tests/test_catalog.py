@@ -183,3 +183,35 @@ async def test_owned_refs_ignores_challenge_solves(db, catalog):
             Solve(link_id=link.id, platform="htb", item_ref="2", item_name="m", kind="user")
         )
     assert await catalog.owned_refs(7, "htb") == {"2"}
+
+
+async def test_sync_ippsec_parses_text_plain_and_stores_etag(db, catalog, http):
+    """raw.githubusercontent serves JSON as text/plain (live-verified) — the
+    sync must parse it anyway, enrich boxes, and remember the ETag."""
+    import json as _json
+
+    from aioresponses import aioresponses
+
+    from hackqueue.db.repo import kv_get
+    from hackqueue.services.catalog import IPPSEC_DATASET_URL, KV_IPPSEC_ETAG
+
+    await seed_boxes(db)
+    dataset = [
+        {
+            "machine": "HackTheBox - Sniper",
+            "videoId": "snip1",
+            "timestamp": {"minutes": 0, "seconds": 5},
+        }
+    ]
+    with aioresponses() as m:
+        m.get(
+            IPPSEC_DATASET_URL,
+            status=200,
+            body=_json.dumps(dataset),
+            headers={"Content-Type": "text/plain; charset=utf-8", "ETag": '"abc123"'},
+        )
+        await catalog.sync_ippsec()
+    box = await catalog.find_box("sniper")
+    assert box.ippsec_video_id == "snip1"
+    async with db.session() as session:
+        assert (await kv_get(session, KV_IPPSEC_ETAG))["etag"] == '"abc123"'

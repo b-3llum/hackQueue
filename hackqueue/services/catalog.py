@@ -12,6 +12,7 @@ Academy entries carry no videoId at all and are skipped.
 from __future__ import annotations
 
 import asyncio
+import json
 import random
 import re
 from typing import Any
@@ -119,10 +120,18 @@ class CatalogService:
         if result.status == 304:
             log.debug("catalog_ippsec_unchanged")
             return
-        if result.status != 200 or not isinstance(result.data, list):
+        dataset = result.data
+        if dataset is None and result.status == 200:
+            # raw.githubusercontent.com serves JSON files as text/plain
+            # (live-verified 2026-07-12), so parse the body explicitly.
+            try:
+                dataset = json.loads(result.text)
+            except ValueError:
+                dataset = None
+        if result.status != 200 or not isinstance(dataset, list):
             log.warning("catalog_ippsec_unexpected", status=result.status)
             return
-        videos = ippsec_video_map(result.data)
+        videos = ippsec_video_map(dataset)
         updated = 0
         async with self._db.session() as session, session.begin():
             boxes = await session.scalars(
