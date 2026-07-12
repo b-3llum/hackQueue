@@ -1,0 +1,42 @@
+# hackQueue scoring configuration.
+#
+# ── How the composite board works ───────────────────────────────────────────
+# For the selected period (weekly/monthly), each member's point GAIN on each
+# platform is computed from snapshots (latest − period baseline, floored at 0).
+# Within a server, each platform's gains are normalized to a 0–100 scale
+# (the top gainer on that platform scores 100; a platform where nobody gained
+# contributes 0 for everyone). The composite score is then the weighted sum
+# of those normalized values using the weights below, divided by the total
+# weight — so it is itself a 0–100 scale.
+#
+# Approved manual claims (Proving Grounds etc.) participate as their own
+# "claims" platform: a member's claim gain for the period is the sum of the
+# point values of their approved claims.
+
+[composite.weights]
+htb = 1.0
+thm = 1.0
+rootme = 1.0
+claims = 1.0
+
+# ── Manual-claim platforms ───────────────────────────────────────────────────
+# Each [claims.<key>] section defines a platform with no API where members
+# submit solves via /solved <key> <name> and moderators approve them.
+# Adding another platform (VulnHub, PortSwigger labs, …) is just a new
+# section here — no code changes.
+
+[claims.pg]
+name = "OffSec Proving Grounds"
+[claims.pg.points]
+easy = 10
+intermediate = 20
+hard = 30
+insane = 40
+
+# Example — uncomment to enable VulnHub claims:
+# [claims.vulnhub]
+# name = "VulnHub"
+# [claims.vulnhub.points]
+# easy = 10
+# medium = 20
+# hard = 30

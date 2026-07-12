@@ -1,0 +1,56 @@
+[project]
+name = "hackqueue"
+version = "0.1.0"
+description = "Discord bot that tracks member progress across CTF platforms (Hack The Box, TryHackMe, Root-Me, OffSec PG) and runs server leaderboards"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+authors = [{ name = "b-3llum" }]
+keywords = ["discord", "bot", "ctf", "hackthebox", "tryhackme", "rootme", "leaderboard"]
+dependencies = [
+    "discord.py>=2.7,<3",
+    "SQLAlchemy>=2.0,<3",
+    "aiosqlite>=0.20",
+    "alembic>=1.13",
+    # <3.13: aioresponses (test mocks) doesn't support aiohttp 3.13+ yet
+    "aiohttp>=3.9,<3.13",
+    "pydantic-settings>=2.2",
+    "structlog>=24.1",
+]
+
+[project.optional-dependencies]
+postgres = ["asyncpg>=0.29"]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.23",
+    "aioresponses>=0.7",
+    "ruff>=0.4",
+]
+
+[project.urls]
+Homepage = "https://github.com/b-3llum/hackQueue"
+Issues = "https://github.com/b-3llum/hackQueue/issues"
+
+[project.scripts]
+hackqueue = "hackqueue.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["hackqueue"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+# Alembic-generated files aren't held to hand-written style
+extend-exclude = ["hackqueue/db/migrations/versions"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
