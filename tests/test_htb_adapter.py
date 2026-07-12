@@ -8,6 +8,7 @@ from hackqueue.adapters.base import (
     Platform,
     PlatformUser,
     ProfileNotFound,
+    ProfilePrivate,
     RateLimited,
 )
 from hackqueue.adapters.htb import (
@@ -20,6 +21,7 @@ from hackqueue.adapters.htb import (
 
 USER = PlatformUser(platform=Platform.HTB, user_id="1337", username="tester")
 
+# Shapes below mirror real responses captured from the live API (2026-07-12).
 PROFILE_PAYLOAD = {
     "profile": {
         "id": 1337,
@@ -29,7 +31,14 @@ PROFILE_PAYLOAD = {
         "ranking": 12,
         "user_owns": 150,
         "system_owns": 145,
+        "user_bloods": 3,
+        "system_bloods": 2,
         "respects": 999,
+        "public": True,
+        "twitter": None,
+        "github": None,
+        "linkedin": None,
+        "cv": None,
     }
 }
 
@@ -45,7 +54,13 @@ async def test_get_profile(adapter):
         stats = await adapter.get_profile(USER)
     assert stats.points == 420
     assert stats.rank == 12
-    assert stats.counters == {"user_owns": 150, "system_owns": 145, "respects": 999}
+    assert stats.counters == {
+        "user_owns": 150,
+        "system_owns": 145,
+        "user_bloods": 3,
+        "system_bloods": 2,
+        "respects": 999,
+    }
     assert stats.username == "0xdf"
 
 
@@ -72,10 +87,25 @@ async def test_302_login_redirect_raises_auth_expired(adapter):
             await adapter.get_profile(USER)
 
 
-async def test_404_raises_profile_not_found_with_privacy_hint(adapter):
+@pytest.mark.parametrize("status", [400, 404])
+async def test_bad_user_id_raises_profile_not_found(adapter, status):
+    """Live API answers 400 for an invalid id (not 404 as docs claimed)."""
     with aioresponses() as m:
-        m.get(URL_PROFILE_BASIC.format(user_id="1337"), status=404, payload={})
-        with pytest.raises(ProfileNotFound, match="public"):
+        m.get(
+            URL_PROFILE_BASIC.format(user_id="1337"),
+            status=status,
+            payload={"message": {"user_id": ["The selected user id is invalid."]}},
+        )
+        with pytest.raises(ProfileNotFound):
+            await adapter.get_profile(USER)
+
+
+async def test_private_profile_is_200_with_public_false(adapter):
+    """A private profile is NOT an error status — it's public=false."""
+    payload = {"profile": {**PROFILE_PAYLOAD["profile"], "public": False}}
+    with aioresponses() as m:
+        m.get(URL_PROFILE_BASIC.format(user_id="1337"), payload=payload)
+        with pytest.raises(ProfilePrivate, match="Public Profile"):
             await adapter.get_profile(USER)
 
 
@@ -91,46 +121,88 @@ async def test_429_raises_rate_limited(adapter):
             await adapter.get_profile(USER)
 
 
-async def test_activity_maps_to_solves(adapter):
-    activity = {
-        "profile": {
-            "activity": [
-                {
-                    "date": "2026-07-10T08:26:37.000000Z",
-                    "object_type": "machine",
-                    "type": "root",
-                    "id": 555,
-                    "name": "Cascade",
-                    "points": 30,
-                    "first_blood": True,
-                },
-                {
-                    "date": "2026-07-09T10:00:00.000000Z",
-                    "object_type": "machine",
-                    "type": "user",
-                    "id": 555,
-                    "name": "Cascade",
-                    "points": 15,
-                },
-                {
-                    "date": "2026-07-08T10:00:00.000000Z",
-                    "object_type": "challenge",
-                    "type": "challenge",
-                    "id": 77,
-                    "name": "Crypto Thing",
-                    "points": 10,
-                },
-                {"object_type": "fortress", "id": 1, "name": "Jet", "points": 20},
-            ]
+ACTIVITY_PAGE_1 = {
+    "data": [
+        {
+            "blood": True,
+            "type": "root",
+            "id": 948,
+            "name": "Nexus",
+            "points": 0,
+            "ownDate": "2026-07-10T08:26:37.000Z",
+        },
+        {
+            "blood": False,
+            "type": "user",
+            "id": 948,
+            "name": "Nexus",
+            "points": 0,
+            "ownDate": "2026-07-09T10:00:00.000Z",
+        },
+        {
+            "blood": False,
+            "type": "challenge",
+            "categoryName": "Web",
+            "id": 117,
+            "name": "wafwaf",
+            "points": 10,
+            "ownDate": "2026-07-08T10:00:00.000Z",
+        },
+        {"type": "fortress", "id": 1, "name": "Jet", "points": 20},
+    ],
+    "meta": {"page": 1, "lastPage": 2, "totalItems": 5},
+}
+ACTIVITY_PAGE_2 = {
+    "data": [
+        {
+            "blood": False,
+            "type": "user",
+            "id": 12,
+            "name": "Lame",
+            "points": 0,
+            "ownDate": "2025-01-02T10:00:00.000Z",
         }
-    }
+    ],
+    "meta": {"page": 2, "lastPage": 2, "totalItems": 5},
+}
+
+
+async def test_activity_maps_v5_shape_to_solves(adapter):
+    """Live v5 fields are type/ownDate/blood — NOT object_type/date/first_blood
+    as the community docs claim; parsing the old names yields zero solves."""
     with aioresponses() as m:
-        m.get(URL_PROFILE_ACTIVITY.format(user_id="1337"), payload=activity)
+        m.get(URL_PROFILE_ACTIVITY.format(user_id="1337", page=1), payload=ACTIVITY_PAGE_1)
         solves = await adapter.get_recent_solves(USER)
     assert [s.kind for s in solves] == ["root", "user", "challenge"]  # fortress skipped
     assert solves[0].first_blood is True
-    assert solves[0].item_ref == "555"
+    assert solves[0].item_ref == "948"
+    assert solves[0].name == "Nexus"
     assert solves[0].solved_at is not None and solves[0].solved_at.year == 2026
+
+
+async def test_shallow_poll_reads_only_page_one(adapter):
+    """Only one mock registered: a second page fetch would error."""
+    with aioresponses() as m:
+        m.get(URL_PROFILE_ACTIVITY.format(user_id="1337", page=1), payload=ACTIVITY_PAGE_1)
+        solves = await adapter.get_recent_solves(USER, deep=False)
+    assert len(solves) == 3
+
+
+async def test_deep_poll_walks_all_pages(adapter):
+    with aioresponses() as m:
+        m.get(URL_PROFILE_ACTIVITY.format(user_id="1337", page=1), payload=ACTIVITY_PAGE_1)
+        m.get(URL_PROFILE_ACTIVITY.format(user_id="1337", page=2), payload=ACTIVITY_PAGE_2)
+        solves = await adapter.get_recent_solves(USER, deep=True)
+    assert [s.name for s in solves] == ["Nexus", "Nexus", "wafwaf", "Lame"]
+
+
+async def test_verification_reads_social_fields(adapter):
+    """HTB has no bio field — the token lives in a social-link field."""
+    payload = {"profile": {**PROFILE_PAYLOAD["profile"], "twitter": "https://x.com/hq-ab12cd34"}}
+    with aioresponses() as m:
+        m.get(URL_PROFILE_BASIC.format(user_id="1337"), payload=payload)
+        haystack = await adapter.get_verification_token_haystack(USER)
+    assert "hq-ab12cd34" in haystack
 
 
 async def test_resolve_user_accepts_profile_url(adapter):
@@ -153,7 +225,8 @@ async def test_iter_machines_pages_both_endpoints(adapter):
             "name": name,
             "os": "Linux",
             "difficultyText": "Easy",
-            "stars": "4.6",  # string per live API
+            "star": 4,  # the LIST endpoint sends numeric "star" (live-verified)
+            "labels": [{"color": "blue", "name": "SEASONAL"}],
             "release": "2020-03-14T17:00:00.000000Z",
             "free": False,
         }
@@ -174,6 +247,16 @@ async def test_iter_machines_pages_both_endpoints(adapter):
         machines = [mach async for mach in adapter.iter_machines()]
     assert len(machines) == 3
     assert [m["retired"] for m in machines] == [False, False, True]
-    assert machines[0]["stars"] == pytest.approx(4.6)
+    assert machines[0]["stars"] == pytest.approx(4.0)
+    assert machines[0]["tags"] == ["SEASONAL"]
     assert machines[2]["platform_ref"] == "3"
     assert machines[0]["difficulty"] == "easy"
+
+
+def test_normalize_machine_accepts_both_rating_keys():
+    """List endpoint sends numeric `star`; detail sends `stars` (often a string)."""
+    from hackqueue.adapters.htb import HTBAdapter as A
+
+    assert A._normalize_machine({"id": 1, "star": 4}, retired=False)["stars"] == 4.0
+    assert A._normalize_machine({"id": 1, "stars": "4.6"}, retired=True)["stars"] == 4.6
+    assert A._normalize_machine({"id": 1}, retired=False)["stars"] is None

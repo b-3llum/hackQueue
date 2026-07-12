@@ -98,7 +98,10 @@ class PollerService:
         log.debug("poll_cycle_start", platform=platform.value, links=len(links))
         for link in links:
             try:
-                stats, solves = await adapter.poll(link_to_platform_user(link))
+                # First poll of a link walks the full solve history (backfill);
+                # later polls take the adapter's cheap recent-only path.
+                deep = not await self._has_snapshot(link.id)
+                stats, solves = await adapter.poll(link_to_platform_user(link), deep=deep)
             except AuthExpired as exc:
                 # Bot-level credential problem: every remaining link would fail too.
                 self._health.record_error(platform, exc)
@@ -173,6 +176,14 @@ class PollerService:
                             backfilled=is_first_poll,
                         )
                     )
+
+    async def _has_snapshot(self, link_id: int) -> bool:
+        async with self._db.session() as session:
+            return (
+                await session.scalar(
+                    select(Snapshot.id).where(Snapshot.link_id == link_id).limit(1)
+                )
+            ) is not None
 
     async def _set_link_status(self, link_id: int, status: str) -> None:
         async with self._db.session() as session, session.begin():

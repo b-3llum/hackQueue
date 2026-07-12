@@ -62,11 +62,17 @@ class RootMeAdapter(PlatformAdapter):
         author = await self._fetch_author(user.user_id)
         return self._stats_from(author, user)
 
-    async def get_recent_solves(self, user: PlatformUser) -> list[SolveEvent]:
+    async def get_recent_solves(
+        self, user: PlatformUser, *, deep: bool = False
+    ) -> list[SolveEvent]:
+        # The author response already carries the FULL validations list, so
+        # deep changes nothing here.
         author = await self._fetch_author(user.user_id)
         return self._solves_from(author)
 
-    async def poll(self, user: PlatformUser) -> tuple[ProfileStats, list[SolveEvent]]:
+    async def poll(
+        self, user: PlatformUser, *, deep: bool = False
+    ) -> tuple[ProfileStats, list[SolveEvent]]:
         author = await self._fetch_author(user.user_id)
         return self._stats_from(author, user), self._solves_from(author)
 

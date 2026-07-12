@@ -98,18 +98,21 @@ class LinkCog(commands.Cog):
                 ephemeral=True,
             )
             return
+        adapter = self.bot.adapters.get(Platform(platform.value))
+        instructions = (adapter.verification_instructions if adapter else "").format(token=token)
         if phase == "issued":
             message = (
                 f"🔑 Your verification token: `{token}`\n"
-                f"1. Put it anywhere in your **public** {platform.name} profile description/bio.\n"
+                f"1. {instructions}\n"
                 f"2. Run `/verify {platform.value}` again.\n"
-                "The token expires in 24 h. You can remove it from your bio once verified."
+                "The token expires in 24 h."
             )
         elif phase == "verified":
             message = "✅ Verified! Your link now shows without the ⚠ marker."
         else:
             message = (
-                f"❌ Token `{token}` not found in your {platform.name} bio yet. "
+                f"❌ Token `{token}` not found on your {platform.name} profile yet.\n"
+                f"{instructions}\n"
                 "Save your profile and try again (give it a minute to propagate)."
             )
         await interaction.followup.send(message, ephemeral=True)

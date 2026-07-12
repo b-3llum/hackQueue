@@ -23,7 +23,10 @@ runs server leaderboards that reward *this week's grind*, not account age.
   VulnHub or PortSwigger labs is a few lines of TOML, zero code.
 - **Box recommendations** — `/suggest [difficulty] [os] [tag]` recommends HTB
   boxes you haven't solved, and `/box <name>` shows an info card with the
-  matching [IppSec](https://ippsec.rocks) walkthrough video when one exists.
+  matching [IppSec](https://ippsec.rocks) walkthrough video when one exists
+  (418 of 544 machines have one at the time of writing). Note: HTB no longer
+  exposes topic tags via its API, so `tag` filters on HTB's labels
+  (`SEASONAL`, `NEW`, …) rather than techniques.
 - **Weekly recap** — optional Monday digest of the completed week: top
   gainers, new solves, first bloods, and a box of the week.
 - **Profiles** — `/profile [@user]` shows all linked accounts, ranks, and
@@ -140,9 +143,12 @@ accordingly in `scoring.toml`.
 
 | Platform | `/verify` support | Notes |
 |---|---|---|
-| Hack The Box | ✅ bio token | Put the issued token in your profile description. |
+| Hack The Box | ✅ social-link token | HTB profiles have no bio field, so `/verify htb` asks you to paste the issued token into any **social link** (Twitter/X, GitHub, LinkedIn, CV) in HTB → Profile Settings — a URL containing it works, e.g. `https://x.com/hq-ab12cd34`. Restore your real link once verified. |
 | TryHackMe | ❌ (planned) | Deferred until API access stabilizes. |
 | Root-Me | ❌ not possible | The Root-Me API exposes no bio field and the profile page blocks non-browser clients, so there is nothing the bot can check. Root-Me links always show the ⚠ unverified marker. |
+
+Servers that don't want unverified links on the board can hide them with
+`/config require-verified true`.
 
 ## Privacy
 

@@ -130,13 +130,14 @@ class LinkingService:
         self, discord_user_id: int, platform: Platform
     ) -> tuple[str, str | None]:
         """One command, two phases. Returns (phase, token):
-        ("issued", token)   — a token was (re)issued; user should put it in their bio
-        ("verified", None)  — the bio contained the token; link is now verified
-        ("not_found", tok)  — bio readable but token missing; keep the same token
+        ("issued", token)   — token (re)issued; the user pastes it into the
+                              public field named by the adapter's instructions
+        ("verified", None)  — the token was found; the link is now verified
+        ("not_found", tok)  — field readable but no token yet; same token stands
         """
         adapter = self._adapters.get(platform)
         if adapter is None or not adapter.supports_verification:
-            raise LinkError(f"`{platform}` doesn't support bio verification.")
+            raise LinkError(f"`{platform}` doesn't support ownership verification.")
         link = await self.get_link(discord_user_id, platform)
         if link is None:
             raise LinkError(f"You have no {platform} account linked. `/link {platform}` first.")
@@ -153,13 +154,13 @@ class LinkingService:
                 db_link.verify_expires_at = now + VERIFY_TOKEN_TTL
             return "issued", token
 
-        bio = await adapter.get_verification_bio(link_to_platform_user(link))
-        if bio is None:
+        haystack = await adapter.get_verification_token_haystack(link_to_platform_user(link))
+        if haystack is None:
             raise LinkError(
-                f"{platform} isn't exposing your profile bio right now, so "
-                "verification can't be checked. Your link still works unverified."
+                f"{platform} isn't exposing a field the bot can check right now, "
+                "so verification is unavailable. Your link still works unverified."
             )
-        if link.verify_token in bio:
+        if link.verify_token in haystack:
             async with self._db.session() as session, session.begin():
                 db_link = await session.get(AccountLink, link.id)
                 assert db_link is not None

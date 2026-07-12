@@ -1,7 +1,6 @@
 # hackQueue — Architecture & Data Model
 
-> Status: **PROPOSAL** — awaiting review before implementation begins.
-> All platform API behavior below was verified with live requests on 2026-07-12 unless marked *docs-only*.
+> Status: **IMPLEMENTED** (v0.1.0). Platform behavior re-verified against the live APIs with real credentials on 2026-07-12; §4 reflects reality, not the community docs.
 
 hackQueue is an open-source Discord bot that tracks member progress across CTF/hacking
 platforms (Hack The Box, TryHackMe, Root-Me, OffSec Proving Grounds) and runs
@@ -69,9 +68,11 @@ class PlatformAdapter(Protocol):
         # canonicalizes it, captures secondary ids (THM needs 3 — see §4)
     async def get_profile(self, link: AccountLink) -> ProfileStats
         # points, rank, platform-specific counters
-    async def get_recent_solves(self, link: AccountLink) -> list[Solve]
-    async def get_verification_bio(self, link: AccountLink) -> str | None
-        # None => platform can't support bio-token verification
+    async def get_recent_solves(self, user: PlatformUser, *, deep: bool) -> list[Solve]
+        # deep=True only on a link's FIRST poll: backfill full history
+    async def get_verification_token_haystack(self, user: PlatformUser) -> str | None
+        # public, user-editable text to search for the token
+        # (HTB: social-link fields — it has no bio. None => unsupported.)
 ```
 
 Normalized types: `ProfileStats(points, rank, counters: dict)`,
@@ -211,15 +212,20 @@ Constraints and notes:
 
 ## 4. Platform integrations — what live testing found
 
-### Hack The Box (API, bearer token) — *straightforward, one landmine*
+### Hack The Box (API, bearer token) — *docs were wrong; corrected against the live API*
+
+Everything below was **re-verified with a real App Token on 2026-07-12**. The
+community Postman docs are stale, and following them silently yields zero
+solves — the checks that were deferred at design time are now resolved:
 
 - Base `https://labs.hackthebox.com/api/v4/`, single bot-level App Token (env `HTB_APP_TOKEN`, created in profile settings, **expires — max 1 yr — and expiry looks identical to a bad token**, so `/health` alerts on persistent 401s).
-- `GET /user/profile/basic/{id}` → `profile.{name, points, rank, ranking, user_owns, system_owns, respects}`.
-- `GET /user/profile/activity/{id}` → per-solve events `{date, object_type, type(user|root), id, name, points, first_blood}` — feeds `solves` and `/suggest` exclusion. (The `authUserInUserOwns` flags on catalog endpoints only reflect the *token's own* account — useless for members.)
-- Machine catalog: page **both** `/machine/paginated` (active) and `/machine/list/retired/paginated` (retired); Laravel pagination via `meta.last_page`; `stars` is a *string*.
+- `GET /user/profile/basic/{id}` → `profile.{name, points, ranking, user_owns, system_owns, user_bloods, system_bloods, respects, public}`.
+- **The activity feed moved to v5.** `GET /api/v4/user/profile/activity/{id}` is a hard **404** today; the live endpoint is `GET /api/v5/user/profile/activity/{id}?page=N`, paginated (`data[]` + `meta.lastPage`, 15/page). Its fields are **`type` (user|root|challenge), `ownDate`, `blood`** — *not* the documented `object_type`/`date`/`first_blood`. The adapter walks all pages on a link's **first** poll (backfill) and only page 1 afterwards.
+- **No bio field exists** anywhere on the profile → the planned bio-token verification is impossible. `/verify htb` instead reads the user-editable social-link fields (`twitter`/`github`/`linkedin`/`cv`), which *are* public in the API.
+- **Private profiles return 200 with `public: false`**, not an error status. An **invalid user id returns 400** (`{"message":{"user_id":[…]}}`), not 404. Both are mapped in `_raise_for_status`/`_fetch_profile`.
+- Machine catalog: page **both** `/machine/paginated` (active) and `/machine/list/retired/paginated` (retired) — 544 machines total today. The list sends the rating as numeric **`star`**; the detail endpoint sends `stars` (sometimes a string). **HTB no longer exposes topic tags at all** (no `tags` field, `/machine/tags*` 404s) — only `labels` (SEASONAL/NEW), which is what `/suggest --tag` filters on.
 - Landmine (live-verified): auth failures are a clean JSON 401 **only when `Accept: application/json` is sent**; otherwise a 302→HTML login page.
-- Cloudflare fronts the API but plain curl with a custom UA passes today; no JS challenge.
-- Private profiles: behavior undocumented (likely 404 = "private or nonexistent") — **confirmed empirically in checkpoint 1 with a real token before the error mapping is frozen**.
+- Cloudflare fronts the API but a custom UA passes today; no JS challenge.
 
 ### TryHackMe (unofficial) — *research surprise #1: currently curl-hostile*
 
@@ -300,7 +306,7 @@ paginated embeds (button-based pagination view).
 - `/unlink <platform>` — purges link + snapshots + solves (privacy guarantee).
 - One account per platform per Discord user (DB-enforced); `/admin link-override` for edge cases.
 - **Verification** is a pluggable per-adapter capability:
-  - **HTB**: bio-token planned — bot issues an 8-char token, user puts it in their profile description, `/verify htb` checks. *Caveat:* whether the bio field is present in the v4 profile response is unconfirmed without a real token; checkpoint 1 verifies empirically, with a fallback documented if absent.
+  - **HTB**: ✅ implemented, but **not via a bio** — live testing proved no bio/description field exists. `/verify htb` issues a token and reads the public, user-editable social-link fields (`twitter`/`github`/`linkedin`/`cv`); a URL containing the token works even if HTB validates the field as a URL.
   - **Root-Me**: **not supportable** (no bio via API; profile page behind anti-bot JS — both live-verified). Root-Me links stay "unverified" and are marked as such on boards. ⚠ *Open decision — see §8.*
   - **THM**: deferred until API access is stable.
 - Unverified links render with a ⚠ marker; `require_verified` per-guild config hides them from boards entirely.
@@ -320,10 +326,12 @@ paginated embeds (button-based pagination view).
 
 ## 8. Open questions for review
 
-1. **Root-Me verification**: bio-token is impossible (see §4/§6). Recommend shipping Root-Me as unverified-only (marked on boards, excludable via `require_verified`), documented in README. Alternatives: skip Root-Me verification silently, or a weak name-match heuristic. OK with the recommendation?
-2. **THM scope**: recommend v1 ships raw-HTTP + graceful degradation only, with the Playwright fallback as a tracked post-v1 issue (it's heavyweight and most self-hosters won't want a browser in the container). Agreed?
-3. **HTB token for development**: checkpoint 1 needs a real App Token (HTB → profile settings) to pin down the activity-endpoint shape, private-profile behavior, and whether bio-token verification is possible. Provide one via `.env` when convenient.
-4. Naming: repo/bot name assumed **hackQueue** (from the project directory). Confirm or rename now — it ends up in the UA string, package name, and docs.
+All four resolved during the build (2026-07-12):
+
+1. **Root-Me verification** — shipped unverified-only (⚠ on boards, hideable with `/config require-verified`); bio-token verification is impossible there.
+2. **THM scope** — v1 ships raw-HTTP + graceful degradation; the Playwright fallback is a post-v1 item.
+3. **HTB token** — provided, and used to correct the adapter against the live API (see §4). Every deferred empirical question is now answered.
+4. **Naming** — **hackQueue** confirmed; it appears in the User-Agent, package name, and docs.
 
 ## 9. Build plan (working checkpoints)
 

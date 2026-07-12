@@ -30,10 +30,10 @@ class FakeHTB(PlatformAdapter):
             platform=Platform.HTB, user_id=user.user_id, username=user.username, points=1, rank=1
         )
 
-    async def get_recent_solves(self, user):
+    async def get_recent_solves(self, user, *, deep: bool = False):
         return []
 
-    async def get_verification_bio(self, user) -> str | None:
+    async def get_verification_token_haystack(self, user) -> str | None:
         return self.bio
 
 

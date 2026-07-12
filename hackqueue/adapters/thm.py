@@ -94,7 +94,9 @@ class THMAdapter(PlatformAdapter):
             counters=counters,
         )
 
-    async def get_recent_solves(self, user: PlatformUser) -> list[SolveEvent]:
+    async def get_recent_solves(
+        self, user: PlatformUser, *, deep: bool = False
+    ) -> list[SolveEvent]:
         """Recent completed rooms via the v2 endpoint. Best-effort: any failure
         (challenge window, missing user hash, shape drift) returns []."""
         user_hash = user.extra_ids.get("user_hash")

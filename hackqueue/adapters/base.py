@@ -113,18 +113,35 @@ class PlatformAdapter(ABC):
         """Fetch current stats for a linked account."""
 
     @abstractmethod
-    async def get_recent_solves(self, user: PlatformUser) -> list[SolveEvent]:
-        """Fetch recent solve events. Best-effort: platforms without a usable
-        source return an empty list rather than raising."""
+    async def get_recent_solves(
+        self, user: PlatformUser, *, deep: bool = False
+    ) -> list[SolveEvent]:
+        """Fetch solve events. Best-effort: platforms without a usable source
+        return an empty list rather than raising.
 
-    async def poll(self, user: PlatformUser) -> tuple[ProfileStats, list[SolveEvent]]:
+        ``deep=True`` asks for the account's full history (paging as far as the
+        platform allows). The poller sets it only on a link's FIRST poll, to
+        backfill; later polls take the cheap recent-only path.
+        """
+
+    async def poll(
+        self, user: PlatformUser, *, deep: bool = False
+    ) -> tuple[ProfileStats, list[SolveEvent]]:
         """One poll cycle. Adapters where a single request serves both reads
         (Root-Me) override this to avoid a second round-trip."""
         stats = await self.get_profile(user)
-        solves = await self.get_recent_solves(user)
+        solves = await self.get_recent_solves(user, deep=deep)
         return stats, solves
 
-    async def get_verification_bio(self, user: PlatformUser) -> str | None:
-        """Return the public profile bio/description used for ownership
-        verification, or None when the platform can't expose one."""
+    async def get_verification_token_haystack(self, user: PlatformUser) -> str | None:
+        """Return public, user-editable profile text in which an ownership
+        token can be found, or None when the platform exposes no such field.
+
+        Not every platform has a "bio": HTB exposes only social-link fields
+        (live-verified), Root-Me exposes nothing. Each adapter documents which
+        field(s) it reads and the command tells the user where to paste it.
+        """
         return None
+
+    #: Where the user should paste their verification token, shown by /verify.
+    verification_instructions: ClassVar[str] = ""
