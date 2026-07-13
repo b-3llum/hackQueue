@@ -48,6 +48,7 @@ class LinkCog(commands.Cog):
                 ephemeral=True,
             )
             return
+        await self.bot.directory.remember(interaction.guild_id, interaction.user)
         adapter = self.bot.adapters.get(plat)
         verify_hint = (
             f"\nTip: `/verify {plat.value}` proves account ownership and removes the ⚠ marker."

@@ -12,14 +12,17 @@ from hackqueue.log import get_logger
 from hackqueue.services.boards import BoardService
 from hackqueue.services.catalog import CatalogService
 from hackqueue.services.claims import ClaimsService
+from hackqueue.services.directory import DirectoryService
 from hackqueue.services.health import HealthRegistry
 from hackqueue.services.linking import LinkingService
 from hackqueue.services.recap import RecapService
 from hackqueue.services.snapshots import PollerService
+from hackqueue.web.server import WebServer
 
 log = get_logger(__name__)
 
 EXTENSIONS = (
+    "hackqueue.cogs.setup",
     "hackqueue.cogs.link",
     "hackqueue.cogs.profile",
     "hackqueue.cogs.leaderboard",
@@ -50,6 +53,12 @@ class HackQueueBot(commands.Bot):
         self.catalog = CatalogService(self.db, self.http_client, self.adapters, settings)
         self.poller = PollerService(self.db, self.adapters, settings, self.health)
         self.recap = RecapService(self, self.db, self.boards, self.catalog)
+        self.directory = DirectoryService(self.db, self)
+        self.web = (
+            WebServer(settings, self.db, self.boards, self.directory, self)
+            if settings.web_enabled
+            else None
+        )
 
     async def setup_hook(self) -> None:
         await self.db.migrate()
@@ -65,6 +74,8 @@ class HackQueueBot(commands.Bot):
         self.poller.start()
         self.catalog.start()
         self.recap.start()
+        if self.web is not None:
+            await self.web.start()
 
     async def on_ready(self) -> None:
         log.info("bot_connected", user=str(self.user), guilds=len(self.guilds))
@@ -74,6 +85,8 @@ class HackQueueBot(commands.Bot):
         await self.poller.stop()
         await self.catalog.stop()
         await self.recap.stop()
+        if self.web is not None:
+            await self.web.stop()
         await self.http_client.close()
         await self.db.close()
         await super().close()

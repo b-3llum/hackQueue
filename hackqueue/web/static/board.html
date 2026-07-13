@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Leaderboard · hackQueue</title>
+<meta name="description" content="CTF leaderboard — points gained on Hack The Box, TryHackMe, Root-Me and manual claims.">
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="masthead">
+    <img id="guild-icon" alt="" hidden>
+    <div>
+      <div class="eyebrow" id="period-label">Leaderboard</div>
+      <h1 id="guild-name">Loading…</h1>
+    </div>
+    <div class="brand">hack<b>Queue</b></div>
+  </header>
+
+  <div class="controls">
+    <div class="pills" id="board-pills" role="group" aria-label="Board"></div>
+    <div class="pills" id="period-pills" role="group" aria-label="Period"></div>
+  </div>
+
+  <main id="board" class="board" aria-live="polite"></main>
+  <div class="legend" id="legend"></div>
+  <div id="notice"></div>
+
+  <footer>
+    <span id="updated"></span>
+    <a href="https://github.com/b-3llum/hackQueue">github.com/b-3llum/hackQueue</a>
+  </footer>
+</div>
+<script src="/static/app.js"></script>
+</body>
+</html>

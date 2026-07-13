@@ -6,6 +6,10 @@ services:
     # .env — nothing is pinned here, so the documented Postgres path works
     # under Docker too. Default: SQLite on the named volume below.
     env_file: .env
+    ports:
+      # Web leaderboard. Only reachable when WEB_ENABLED=true in .env;
+      # change the left-hand side to move the host port.
+      - "8080:8080"
     volumes:
       - hackqueue-data:/app/data
       # Uncomment to tune scoring without rebuilding:

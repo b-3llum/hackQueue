@@ -18,8 +18,11 @@ CI runs exactly those three commands on every PR — green locally means green i
 - **Never commit secrets.** Tokens live in `.env` (gitignored). If you add a
   new credential, document it in `.env.example` and the README token table.
 - Slash commands only; no privileged intents.
-- All user-visible strings live in cogs/`ui/embeds.py`, all math in
-  `services/scoring.py` (pure functions — add tests there for any behavior change).
+- All user-visible strings live in cogs/`ui/embeds.py` (Discord) and
+  `web/static/` (the web board); all math lives in `services/scoring.py`
+  (pure functions — add tests there for any behavior change).
+- The web board is plain aiohttp + vanilla JS/CSS with **no build step and no
+  CDN**: self-hosters shouldn't need node, and the page must work offline.
 - A platform being down must never break another platform's boards.
 
 ## How to add a platform adapter

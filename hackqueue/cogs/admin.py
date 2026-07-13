@@ -58,6 +58,11 @@ class ConfigGroup(app_commands.Group, name="config", description="Configure hack
         embed.add_field(
             name="Require verified links", value="on" if guild.require_verified else "off"
         )
+        web = "off"
+        if guild.web_enabled:
+            base = self.bot.settings.web_base_url.rstrip("/")
+            web = f"[published]({base}/g/{guild.guild_id})"
+        embed.add_field(name="Web leaderboard", value=web)
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @app_commands.command(name="mod-role", description="Role allowed to review claims")
@@ -122,6 +127,32 @@ class ConfigGroup(app_commands.Group, name="config", description="Configure hack
             else f"{member.mention} has no {platform.name} link."
         )
         await interaction.response.send_message(message, ephemeral=True)
+
+    @app_commands.command(
+        name="web", description="Publish this server's leaderboard as a web page, or unpublish it"
+    )
+    @app_commands.describe(enabled="On publishes the board at a public URL; off takes it down")
+    async def web(self, interaction: discord.Interaction, enabled: bool) -> None:
+        if enabled and not self.bot.settings.web_enabled:
+            await interaction.response.send_message(
+                "❌ The web board is switched off on this hackQueue instance. "
+                "The operator enables it by setting `WEB_ENABLED=true`.",
+                ephemeral=True,
+            )
+            return
+        await self._update(interaction.guild_id, web_enabled=enabled)
+        if not enabled:
+            await interaction.response.send_message(
+                "🔒 Web leaderboard unpublished — the page now 404s.", ephemeral=True
+            )
+            return
+        url = f"{self.bot.settings.web_base_url.rstrip('/')}/g/{interaction.guild_id}"
+        await interaction.response.send_message(
+            f"🌐 Leaderboard published: {url}\n"
+            "-# Anyone with the link can see participating members' Discord display names, "
+            "avatars and scores. `/config web off` takes it down.",
+            ephemeral=True,
+        )
 
     @app_commands.command(
         name="purge-member",

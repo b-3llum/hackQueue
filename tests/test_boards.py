@@ -1,18 +1,25 @@
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
 from hackqueue.adapters.base import Platform
 from hackqueue.adapters.registry import AdapterRegistry
 from hackqueue.config import ScoringConfig
-from hackqueue.db.models import AccountLink, Claim, Guild, GuildMember, Snapshot, utcnow
+from hackqueue.db.models import AccountLink, Claim, Guild, GuildMember, Snapshot
 from hackqueue.services.boards import BoardService
 from hackqueue.services.health import HealthRegistry
 from hackqueue.services.scoring import Period, period_start
 
 GUILD = 100
+
+# Every board call passes an explicit `as_of`, so these tests are pinned to a
+# fixed instant and never depend on the wall clock. (Seeding relative to
+# utcnow() used to fail every Monday between 00:00 and 12:00 UTC, when
+# "week start + 12h" lands in the future and is correctly filtered out.)
+NOW = datetime(2026, 3, 5, 13, 0, tzinfo=UTC)  # a Thursday
+WEEK_START = period_start(Period.WEEKLY, NOW)  # Monday 2026-03-02 00:00 UTC
 
 
 class _StubAdapter:
@@ -34,10 +41,9 @@ def boards(db, registry):
 async def seed(db, *, require_verified: bool = False):
     """Alice: 100 -> 150 across the week boundary (delta 50, verified).
     Bob: joined mid-week, 200 -> 220 (delta 20, unverified)."""
-    week_start = period_start(Period.WEEKLY, utcnow())
-    before = week_start - timedelta(days=1)
-    mid = week_start + timedelta(hours=6)
-    later = week_start + timedelta(hours=12)
+    before = WEEK_START - timedelta(days=1)
+    mid = WEEK_START + timedelta(hours=6)
+    later = WEEK_START + timedelta(hours=12)
     async with db.session() as session, session.begin():
         session.add(Guild(guild_id=GUILD, require_verified=require_verified))
         session.add(GuildMember(guild_id=GUILD, discord_user_id=1))
@@ -70,25 +76,26 @@ async def seed(db, *, require_verified: bool = False):
 
 async def test_weekly_platform_board_deltas(db, boards):
     await seed(db)
-    board = await boards.platform_board(GUILD, Platform.HTB, Period.WEEKLY)
+    board = await boards.platform_board(GUILD, Platform.HTB, Period.WEEKLY, as_of=NOW)
     assert [(r.discord_user_id, r.value) for r in board.rows] == [(1, 50.0), (2, 20.0)]
     assert board.rows[0].verified is True
     assert board.rows[1].verified is False
+    assert board.rows[0].parts == {"htb": 50.0}
 
 
 async def test_alltime_platform_board_raw_points(db, boards):
     await seed(db)
-    board = await boards.platform_board(GUILD, Platform.HTB, Period.ALLTIME)
+    board = await boards.platform_board(GUILD, Platform.HTB, Period.ALLTIME, as_of=NOW)
     assert [(r.discord_user_id, r.value) for r in board.rows] == [(2, 220.0), (1, 150.0)]
 
 
 async def test_require_verified_hides_unverified(db, boards):
     await seed(db, require_verified=True)
-    board = await boards.platform_board(GUILD, Platform.HTB, Period.WEEKLY)
+    board = await boards.platform_board(GUILD, Platform.HTB, Period.WEEKLY, as_of=NOW)
     assert [r.discord_user_id for r in board.rows] == [1]
 
 
-async def test_composite_includes_claims(db, boards):
+async def test_composite_includes_claims_and_exposes_contributions(db, boards):
     await seed(db)
     async with db.session() as session, session.begin():
         session.add(
@@ -101,27 +108,46 @@ async def test_composite_includes_claims(db, boards):
                 points=10,
                 status="approved",
                 reviewed_by=99,
-                reviewed_at=utcnow(),
+                reviewed_at=WEEK_START + timedelta(hours=8),
             )
         )
-    board = await boards.composite_board(GUILD, Period.WEEKLY)
+    board = await boards.composite_board(GUILD, Period.WEEKLY, as_of=NOW)
     scores = {r.discord_user_id: r.value for r in board.rows}
     # htb: alice 100, bob 40 (normalized). claims: bob 100, alice 0.
-    # composite (equal weights): alice 50, bob 70.
+    # composite (equal weights over the participating platforms): alice 50, bob 70.
     assert scores[1] == pytest.approx(50.0)
     assert scores[2] == pytest.approx(70.0)
     assert board.rows[0].discord_user_id == 2  # bob leads
 
+    # The stacked-bar contract: parts sum to the score and name their platform.
+    bob_row = next(r for r in board.rows if r.discord_user_id == 2)
+    assert sum(bob_row.parts.values()) == pytest.approx(bob_row.value)
+    assert bob_row.parts["claims"] == pytest.approx(50.0)
+    assert bob_row.parts["htb"] == pytest.approx(20.0)
+
+
+async def test_as_of_windowing_ignores_later_snapshots(db, boards):
+    """Anchoring a board in the past (what the recap does for the completed
+    week) must ignore snapshots taken after the anchor."""
+    await seed(db)
+    early = await boards.platform_board(
+        GUILD, Platform.HTB, Period.WEEKLY, as_of=WEEK_START + timedelta(hours=1)
+    )
+    assert early.rows == []  # the +6h and +12h snapshots aren't visible yet
+    later = await boards.platform_board(
+        GUILD, Platform.HTB, Period.WEEKLY, as_of=WEEK_START + timedelta(hours=13)
+    )
+    assert [(r.discord_user_id, r.value) for r in later.rows] == [(1, 50.0), (2, 20.0)]
+
 
 async def test_claims_board_respects_period(db, boards):
-    week_start = period_start(Period.WEEKLY, utcnow())
     async with db.session() as session, session.begin():
         session.add(Guild(guild_id=GUILD))
         session.add(GuildMember(guild_id=GUILD, discord_user_id=1))
         await session.flush()
         for name, reviewed, pts in (
-            ("OldBox", week_start - timedelta(days=2), 30),
-            ("NewBox", week_start + timedelta(hours=1), 20),
+            ("OldBox", WEEK_START - timedelta(days=2), 30),
+            ("NewBox", WEEK_START + timedelta(hours=1), 20),
         ):
             session.add(
                 Claim(
@@ -136,8 +162,8 @@ async def test_claims_board_respects_period(db, boards):
                     reviewed_at=reviewed,
                 )
             )
-    weekly = await boards.claims_board(GUILD, Period.WEEKLY)
-    alltime = await boards.claims_board(GUILD, Period.ALLTIME)
+    weekly = await boards.claims_board(GUILD, Period.WEEKLY, as_of=NOW)
+    alltime = await boards.claims_board(GUILD, Period.ALLTIME, as_of=NOW)
     assert weekly.rows[0].value == 20.0
     assert alltime.rows[0].value == 50.0
 
@@ -157,34 +183,11 @@ async def test_pending_and_denied_claims_do_not_score(db, boards):
                     difficulty="easy",
                     points=10,
                     status=status,
-                    reviewed_at=utcnow() if status == "denied" else None,
+                    reviewed_at=WEEK_START if status == "denied" else None,
                 )
             )
-    board = await boards.claims_board(GUILD, Period.ALLTIME)
+    board = await boards.claims_board(GUILD, Period.ALLTIME, as_of=NOW)
     assert board.rows == []
-
-
-async def test_empty_guild_board(db, boards):
-    board = await boards.platform_board(GUILD, Platform.HTB, Period.WEEKLY)
-    assert board.rows == []
-
-
-async def test_as_of_windowing_ignores_later_snapshots(db, boards):
-    """Anchoring a board in the past (the recap's completed-week view) must
-    ignore snapshots taken after the anchor."""
-    await seed(db)
-    week_start = period_start(Period.WEEKLY, utcnow())
-    board = await boards.platform_board(
-        GUILD, Platform.HTB, Period.WEEKLY, as_of=week_start + timedelta(hours=1)
-    )
-    # at +1h, alice has baseline(100) but her +12h snapshot is invisible; bob's
-    # first snapshot is at +6h — also invisible. Nobody has gains yet.
-    assert board.rows == []
-    # at +13h both later snapshots are visible again
-    board = await boards.platform_board(
-        GUILD, Platform.HTB, Period.WEEKLY, as_of=week_start + timedelta(hours=13)
-    )
-    assert [(r.discord_user_id, r.value) for r in board.rows] == [(1, 50.0), (2, 20.0)]
 
 
 async def test_claim_totals_exclude_hidden_and_non_members(db, boards):
@@ -204,8 +207,13 @@ async def test_claim_totals_exclude_hidden_and_non_members(db, boards):
                     points=10,
                     status="approved",
                     reviewed_by=9,
-                    reviewed_at=utcnow(),
+                    reviewed_at=WEEK_START + timedelta(hours=2),
                 )
             )
-    board = await boards.claims_board(GUILD, Period.ALLTIME)
+    board = await boards.claims_board(GUILD, Period.ALLTIME, as_of=NOW)
     assert [r.discord_user_id for r in board.rows] == [1]
+
+
+async def test_empty_guild_board(db, boards):
+    board = await boards.platform_board(GUILD, Platform.HTB, Period.WEEKLY, as_of=NOW)
+    assert board.rows == []

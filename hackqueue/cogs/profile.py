@@ -28,6 +28,7 @@ class ProfileCog(commands.Cog):
     ) -> None:
         target = member or interaction.user
         await interaction.response.defer()
+        await self.bot.directory.remember(interaction.guild_id, target)
         links = await self.bot.linking.links_of(target.id)
         latest: dict[int, Snapshot | None] = {}
         async with self.bot.db.session() as session:

@@ -1,0 +1,330 @@
+/* hackQueue board — ink slate + phosphor amber.
+   Monospace is the display face: no webfonts, no CDN, and it's the native
+   typography of the subject. Colour carries platform identity; the stacked
+   gain bar is the one loud element. */
+
+:root {
+  color-scheme: dark light;
+
+  --ink: #0f1218;
+  --surface: #161b24;
+  --surface-2: #1c222d;
+  --line: #262e3b;
+  --text: #e7eaf0;
+  --muted: #8b96a8;
+  --amber: #f2a33c;   /* the flag */
+  --cyan: #48c9bd;    /* verified */
+
+  --htb: #f2a33c;
+  --thm: #e2585b;
+  --rootme: #5b8def;
+  --claims: #a78bfa;
+
+  --mono: ui-monospace, "JetBrains Mono", "SFMono-Regular", "SF Mono", Menlo,
+    Consolas, "Liberation Mono", monospace;
+  --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  --radius: 10px;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --ink: #f3f5f8;
+    --surface: #ffffff;
+    --surface-2: #f7f9fc;
+    --line: #dfe4ec;
+    --text: #131720;
+    --muted: #5d6779;
+    --amber: #c97a13;
+    --cyan: #14867c;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--ink);
+  color: var(--text);
+  font-family: var(--sans);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap {
+  max-width: 940px;
+  margin: 0 auto;
+  padding: 40px 20px 80px;
+}
+
+/* ── header ───────────────────────────────────────────────────────────── */
+
+.masthead {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.masthead img {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius);
+}
+
+.masthead h1 {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.eyebrow {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.brand {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.brand b { color: var(--amber); font-weight: 600; }
+
+/* ── controls ─────────────────────────────────────────────────────────── */
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  margin: 22px 0 26px;
+}
+
+/* min-width:0 — without it these flex items keep their max-content width and
+   stretch the page instead of wrapping. */
+.pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.pill {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 6px 13px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.pill:hover { color: var(--text); border-color: var(--muted); }
+.pill[aria-pressed="true"] {
+  color: var(--ink);
+  background: var(--amber);
+  border-color: var(--amber);
+  font-weight: 600;
+}
+.pill:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+
+/* ── board ────────────────────────────────────────────────────────────── */
+
+.board { display: flex; flex-direction: column; gap: 6px; }
+
+.row {
+  display: grid;
+  grid-template-columns: 40px 34px minmax(120px, 1fr) minmax(90px, 2fr) 74px;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+/* The leader gets the thesis treatment: taller, amber-edged, bigger score. */
+.row.leader {
+  padding: 20px 16px;
+  border-color: color-mix(in srgb, var(--amber) 55%, var(--line));
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--amber) 8%, var(--surface)),
+    var(--surface) 55%
+  );
+}
+.row.leader .score { font-size: 1.5rem; color: var(--amber); }
+.row.leader .avatar { width: 42px; height: 42px; }
+
+.rank {
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.row.leader .rank { color: var(--amber); }
+
+.avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--surface-2);
+  object-fit: cover;
+}
+
+.avatar-blank {
+  display: grid;
+  place-items: center;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: var(--muted);
+  border: 1px solid var(--line);
+}
+
+.who { min-width: 0; }
+.name {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.handle {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.unverified {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0 4px;
+  margin-left: 6px;
+  cursor: help;
+}
+
+/* The signature: on the composite board this bar is the formula — each
+   segment is one platform's weighted contribution to the score. */
+.bar {
+  display: flex;
+  height: 10px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--surface-2);
+}
+/* The bar's width is authoritative (set inline); the grow is a transform, so
+   a skipped animation can never leave a row looking like a zero. */
+.seg {
+  height: 100%;
+  transform-origin: left center;
+  animation: grow 0.55s cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+}
+
+@keyframes grow {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+.seg.htb { background: var(--htb); }
+.seg.thm { background: var(--thm); }
+.seg.rootme { background: var(--rootme); }
+.seg.claims { background: var(--claims); }
+
+.score {
+  font-family: var(--mono);
+  font-size: 1rem;
+  font-weight: 600;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── legend, footer, states ───────────────────────────────────────────── */
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 18px;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+.legend span { display: flex; align-items: center; gap: 6px; }
+.legend i {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  display: inline-block;
+}
+
+.notice {
+  margin-top: 20px;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  border: 1px solid color-mix(in srgb, var(--amber) 40%, var(--line));
+  background: color-mix(in srgb, var(--amber) 7%, transparent);
+  font-size: 0.85rem;
+}
+
+.empty {
+  padding: 48px 20px;
+  text-align: center;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  color: var(--muted);
+}
+.empty code {
+  font-family: var(--mono);
+  color: var(--amber);
+}
+
+footer {
+  margin-top: 28px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+footer a { color: var(--muted); }
+
+/* Narrow screens: the bar moves under the name instead of competing with it.
+   Every child is placed explicitly — auto-placement with a hidden column is
+   what pushes the score off-screen. */
+@media (max-width: 640px) {
+  .row {
+    grid-template-columns: 26px 30px minmax(0, 1fr) auto;
+    gap: 10px;
+    padding: 12px 14px;
+  }
+  .rank { grid-column: 1; }
+  .avatar { grid-column: 2; }
+  .who { grid-column: 3; }
+  .score { grid-column: 4; }
+  .bar {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    margin-top: 2px;
+  }
+  .row.leader { padding: 16px 14px; }
+  .row.leader .score { font-size: 1.25rem; }
+  .wrap { padding: 28px 14px 60px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .seg { animation: none; }
+}

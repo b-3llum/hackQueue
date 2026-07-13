@@ -76,16 +76,19 @@ def normalize_max(values: Mapping[K, float]) -> dict[K, float]:
     return {k: (v / top) * 100.0 if v > 0 else 0.0 for k, v in values.items()}
 
 
-def composite_scores(
+def composite_breakdown(
     platform_values: Mapping[str, Mapping[K, float]],
     weights: Mapping[str, float],
-) -> dict[K, float]:
-    """Weighted average of per-platform normalized scores.
+) -> dict[K, dict[str, float]]:
+    """Each member's composite score, split into what each platform contributed.
+
+    A member's contributions sum to their composite score, which is what lets
+    the web board draw a stacked bar that *is* the formula.
 
     Every platform present in ``platform_values`` participates with weight
     ``weights.get(platform, 1.0)`` — including platforms where all deltas are
     zero, so one dead platform dilutes rather than inflates the rest.
-    Members missing from a platform score 0 there.
+    Members missing from a platform contribute 0 there.
     """
     included = {p: v for p, v in platform_values.items() if weights.get(p, 1.0) > 0}
     total_weight = sum(weights.get(p, 1.0) for p in included)
@@ -96,6 +99,17 @@ def composite_scores(
         members.update(values.keys())
     normalized = {p: normalize_max(v) for p, v in included.items()}
     return {
-        m: sum(normalized[p].get(m, 0.0) * weights.get(p, 1.0) for p in included) / total_weight
+        m: {p: normalized[p].get(m, 0.0) * weights.get(p, 1.0) / total_weight for p in included}
         for m in members
+    }
+
+
+def composite_scores(
+    platform_values: Mapping[str, Mapping[K, float]],
+    weights: Mapping[str, float],
+) -> dict[K, float]:
+    """Weighted average of per-platform normalized scores (0-100)."""
+    return {
+        member: sum(parts.values())
+        for member, parts in composite_breakdown(platform_values, weights).items()
     }

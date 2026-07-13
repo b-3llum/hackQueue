@@ -69,6 +69,11 @@ class Settings(BaseSettings):
     database_url: str = "sqlite+aiosqlite:///data/hackqueue.db"
     scoring_config: Path = Path("scoring.toml")
 
+    web_enabled: bool = False
+    web_host: str = "0.0.0.0"
+    web_port: int = 8080
+    web_base_url: str = "http://localhost:8080"
+
     poll_interval_htb: int = 45
     poll_interval_thm: int = 60
     poll_interval_rootme: int = 60

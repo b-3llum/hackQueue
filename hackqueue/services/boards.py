@@ -9,7 +9,7 @@ the *completed* week instead of the first hours of the new one.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 
 from sqlalchemy import func, select
@@ -21,7 +21,7 @@ from hackqueue.config import ScoringConfig
 from hackqueue.db.models import AccountLink, Claim, Guild, GuildMember, Snapshot, utcnow
 from hackqueue.db.session import Database
 from hackqueue.services.health import HealthRegistry
-from hackqueue.services.scoring import Period, composite_scores, period_start, points_delta
+from hackqueue.services.scoring import Period, composite_breakdown, period_start, points_delta
 
 CLAIMS_KEY = "claims"
 
@@ -32,6 +32,9 @@ class BoardRow:
     label: str  # platform username, or empty for composite rows
     value: float
     verified: bool
+    #: For the composite board: how much each platform contributed to `value`
+    #: (they sum to it). The web board draws these as a stacked bar.
+    parts: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -66,15 +69,18 @@ class BoardService:
         start = period_start(period, as_of)
         async with self._db.session() as session:
             links = await self._guild_links(session, guild_id, platform)
-            rows = [
-                BoardRow(
-                    discord_user_id=link.discord_user_id,
-                    label=link.platform_username,
-                    value=float(await self._link_delta(session, link.id, start, as_of)),
-                    verified=link.verified,
+            rows = []
+            for link in links:
+                value = float(await self._link_delta(session, link.id, start, as_of))
+                rows.append(
+                    BoardRow(
+                        discord_user_id=link.discord_user_id,
+                        label=link.platform_username,
+                        value=value,
+                        verified=link.verified,
+                        parts={platform.value: value},
+                    )
                 )
-                for link in links
-            ]
         rows = [r for r in rows if r.value > 0] if start is not None else rows
         rows.sort(key=lambda r: r.value, reverse=True)
         stale = [platform.value] if self._health.is_stale(platform) else []
@@ -88,7 +94,13 @@ class BoardService:
         async with self._db.session() as session:
             totals = await self._claim_totals(session, guild_id, start, as_of)
         rows = [
-            BoardRow(discord_user_id=uid, label="", value=float(points), verified=True)
+            BoardRow(
+                discord_user_id=uid,
+                label="",
+                value=float(points),
+                verified=True,
+                parts={CLAIMS_KEY: float(points)},
+            )
             for uid, points in totals.items()
             if points > 0
         ]
@@ -117,16 +129,17 @@ class BoardService:
             claim_totals = await self._claim_totals(session, guild_id, start, as_of)
         if claim_totals:
             platform_values[CLAIMS_KEY] = {u: float(p) for u, p in claim_totals.items()}
-        scores = composite_scores(platform_values, self._scoring.weights)
+        breakdown = composite_breakdown(platform_values, self._scoring.weights)
         rows = [
             BoardRow(
                 discord_user_id=uid,
                 label="",
-                value=score,
+                value=sum(parts.values()),
                 verified=verified_by_user.get(uid, True),
+                parts={p: v for p, v in parts.items() if v > 0},
             )
-            for uid, score in scores.items()
-            if score > 0
+            for uid, parts in breakdown.items()
+            if sum(parts.values()) > 0
         ]
         rows.sort(key=lambda r: r.value, reverse=True)
         stale = [p.value for p in self._adapters.platforms if self._health.is_stale(p)]

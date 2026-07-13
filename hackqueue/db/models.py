@@ -63,6 +63,9 @@ class Guild(Base):
     recap_channel_id: Mapped[int | None] = mapped_column(BigInteger)
     recap_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     require_verified: Mapped[bool] = mapped_column(Boolean, default=False)
+    #: Opt-in: publish this server's board on the web UI (off by default —
+    #: it exposes members' Discord display names and avatars publicly).
+    web_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
 
 
@@ -77,6 +80,10 @@ class GuildMember(Base):
     discord_user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     hidden: Mapped[bool] = mapped_column(Boolean, default=False)
     joined_at: Mapped[datetime] = mapped_column(default=utcnow)
+    #: Cached so the web board can name people without privileged intents.
+    display_name: Mapped[str | None] = mapped_column(String(64))
+    avatar_url: Mapped[str | None] = mapped_column(Text)
+    display_updated_at: Mapped[datetime | None]
 
 
 class AccountLink(Base):

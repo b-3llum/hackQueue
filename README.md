@@ -4,15 +4,21 @@ A Discord bot that tracks your community's progress across CTF/hacking platforms
 **Hack The Box**, **TryHackMe**, **Root-Me**, and **OffSec Proving Grounds** — and
 runs server leaderboards that reward *this week's grind*, not account age.
 
-> 🖼️ *screenshot: weekly composite leaderboard embed — placeholder*
-> 🖼️ *GIF: /link → /profile → /leaderboard flow — placeholder*
+![The web leaderboard](docs/img/web-leaderboard.png)
+
+*The composite board. Each bar is stacked by platform, so you can see at a
+glance where someone's points came from — n0ctis leads on Proving Grounds
+claims (violet), ghostbyte on Hack The Box (amber).*
+
+> 🖼️ *screenshot: Discord `/leaderboard` embed — placeholder*
+> 🖼️ *GIF: `/link` → `/profile` → `/leaderboard` flow — placeholder*
 
 ## Features
 
 - **Account linking** — `/link htb|thm|rootme <id-or-username>`, with optional
-  ownership verification (`/verify`) via a token in your profile bio. One
-  account per platform per Discord user; `/unlink` deletes everything the bot
-  stored about that account.
+  ownership verification (`/verify` — see the table below for how each platform
+  proves it). One account per platform per Discord user; `/unlink` deletes
+  everything the bot stored about that account.
 - **Leaderboards** — `/leaderboard [board] [weekly|monthly|alltime]`:
   - per-platform boards (raw points, all-time),
   - **delta boards** (points gained this week/month — the default),
@@ -31,6 +37,12 @@ runs server leaderboards that reward *this week's grind*, not account age.
   gainers, new solves, first bloods, and a box of the week.
 - **Profiles** — `/profile [@user]` shows all linked accounts, ranks, and
   recent solves.
+- **Web leaderboard** — `/config web on` publishes the server's board as a
+  page anyone can open (opt-in, per server). Light/dark, mobile-friendly, and
+  it shows platform contributions as a stacked bar.
+- **One-command setup** — `/setup` creates the channels the bot needs
+  (`#leaderboard` for recaps, a moderators-only `#claim-review`) and wires the
+  config up in one go.
 - **Ops-friendly** — `/health` for admins, structured logging, per-platform
   rate limiting and backoff, and hard isolation: one platform's outage never
   breaks the others' boards (stale data is marked, not dropped).
@@ -59,8 +71,9 @@ TryHackMe needs no token. A platform whose credential is missing is simply
 disabled — everything else keeps working.
 
 When creating the Discord application, invite the bot with the
-`bot` + `applications.commands` scopes (Send Messages + Embed Links permissions
-are enough).
+`bot` + `applications.commands` scopes. Permissions: **Send Messages**,
+**Embed Links** and **Attach Files** (for claim proof screenshots), plus
+**Manage Channels** if you want `/setup` to create the channels for you.
 
 ### Docker (recommended)
 
@@ -88,9 +101,31 @@ Postgres instead of SQLite: `pip install -e '.[postgres]'` and set
 
 ### First-time server setup (Discord side)
 
-1. `/config mod-channel #claims` and `/config mod-role @Mods` — enables `/solved` claims.
-2. `/config recap-channel #general` — enables the Monday recap (optional).
-3. `/config require-verified true` — hide unverified links from boards (optional).
+Run **`/setup`** — it creates a `hackQueue` category with `#leaderboard`
+(recaps and announcements) and a moderators-only `#claim-review` (claim
+approvals), and points the config at them. Pass a role (`/setup mod_role:@Mods`)
+to say who may approve claims; otherwise anyone with **Manage Server** can.
+The bot needs **Manage Channels** for this; if you'd rather make the channels
+yourself, use `/config mod-channel` and `/config recap-channel` instead.
+
+Optional extras:
+
+- `/config web on` — publish the leaderboard as a web page (requires
+  `WEB_ENABLED=true` on the instance; the bot replies with your link).
+- `/config require-verified true` — hide unverified links from boards.
+- `/config show` — review everything.
+
+### The web leaderboard
+
+Set `WEB_ENABLED=true` (and `WEB_BASE_URL` to whatever the outside world
+sees — a domain, if you put a reverse proxy in front). The bot then serves
+`/g/<server id>` on `WEB_PORT`. **Nothing is published until a moderator runs
+`/config web on` in that server**, and `/config web off` takes it straight
+back down.
+
+| | |
+|---|---|
+| ![light](docs/img/web-leaderboard-light.png) | ![mobile](docs/img/web-leaderboard-mobile.png) |
 
 ## Configuration reference
 
@@ -157,9 +192,17 @@ The bot stores:
 - your Discord user ID and the platform IDs/usernames you link,
 - point/rank snapshots and solve events for those accounts,
 - any manual claims you submit via `/solved` (box name, difficulty, a link to
-  the proof screenshot, and who reviewed it) — these are per-server records.
+  the proof screenshot, and who reviewed it) — these are per-server records,
+- your Discord display name and avatar URL, cached only so the web board can
+  show who's who (the bot runs without privileged intents, so it can't read
+  member lists — it only ever caches people who interact with it).
 
 No message content, no member lists.
+
+If a server turns the web board on, participating members' display names,
+avatars and scores are visible to anyone with the link. It's off by default,
+any moderator can take it down with `/config web off`, and `/unlink` removes
+you from it entirely.
 
 **Deleting your data:** `/unlink <platform>` immediately and permanently
 deletes that link with all its snapshots and solve history. Manual claims are
