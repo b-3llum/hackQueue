@@ -63,5 +63,5 @@ def build_registry(http: HttpClient, settings: Settings) -> AdapterRegistry:
         registry.register(RootMeAdapter(http, settings.rootme_api_key))
     else:
         log.warning("adapter_disabled", platform="rootme", reason="ROOTME_API_KEY not set")
-    registry.register(THMAdapter(http))  # no credential needed
+    registry.register(THMAdapter(http, USER_AGENT))  # no credential needed
     return registry

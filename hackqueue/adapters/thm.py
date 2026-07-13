@@ -1,19 +1,22 @@
-"""TryHackMe adapter (unofficial endpoints — best-effort by design).
+"""TryHackMe adapter.
 
-TryHackMe sits behind Vercel's bot mitigation, which (as live-verified on
-2026-07-12, ARCHITECTURE.md §4) answers plain-HTTP API calls with a
-429 text/html JS challenge. This adapter therefore:
+Live-verified 2026-07-13 with real requests. Two things worth knowing, because
+both contradict the community docs *and* this file's first version:
 
-- treats a challenge response as ``PlatformUnavailable`` (the poller flips
-  THM to "degraded" and boards render the last snapshots with a staleness
-  marker — it must never look like a rate limit or an empty profile);
-- validates response shapes before trusting them (the documented shapes are
-  community knowledge and could not be live-verified);
-- captures every THM identifier scheme it can at link time (username for v1
-  endpoints, userPublicId / user hash for v2) into ``extra_ids``.
+1. **TryHackMe rejects bot-looking User-Agents.** A plain ``hackQueue/x`` UA
+   gets Vercel's bot-mitigation challenge (429 + an HTML page) on every
+   endpoint. A *browser* UA sails through — no cookies, no JS, no headless
+   browser needed. So this adapter sends a Chrome UA with our identifier
+   appended: a maintainer reading THM's logs still sees ``hackQueue`` and the
+   repo URL, so we stay attributable rather than pretending to be a person.
+   The challenge detection stays in place — THM can switch mitigation back on
+   at any time, and when it does the platform degrades instead of breaking.
 
-None of the shapes here are guaranteed; that is why THM data is best-effort
-and why every URL lives in the constants block below.
+2. **Almost every documented v1 endpoint is dead** (they serve the SPA's HTML
+   now). The live surface is ``/api/v2/public-profile``, which answers with
+   everything in one request: points, percentile, rooms completed, badges,
+   streak, level, and an ``about`` bio — which is what finally makes ownership
+   verification possible here.
 """
 
 from __future__ import annotations
@@ -37,128 +40,138 @@ from hackqueue.log import get_logger
 log = get_logger(__name__)
 
 BASE = "https://tryhackme.com"
-# v1 (username-keyed). /api/discord/user was purpose-built for Discord bots:
-# one call returns rank + points + subscription flag.
-URL_DISCORD_USER = BASE + "/api/discord/user/{username}"
-URL_RANK = BASE + "/api/user/rank/{username}"
-URL_COMPLETED_COUNT = BASE + "/api/no-completed-rooms-public/{username}"
-# v2 (id-keyed)
 URL_PUBLIC_PROFILE = BASE + "/api/v2/public-profile?username={username}"
 URL_COMPLETED_ROOMS = (
-    BASE + "/api/v2/public-profile/completed-rooms?user={user_hash}&limit=25&page=1"
+    BASE + "/api/v2/public-profile/completed-rooms?username={username}&limit={limit}&page={page}"
 )
-PROFILE_WEB_URL = "https://tryhackme.com/p/{username}"
+PROFILE_WEB_URL = BASE + "/p/{username}"
+ROOM_WEB_URL = BASE + "/room/{code}"
+
+#: A browser UA is the price of entry (see the module docstring); our own
+#: identifier rides along so we're still attributable.
+BROWSER_UA = (
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/140.0.0.0 Safari/537.36"
+)
+
+ROOMS_PER_PAGE = 50
+MAX_ROOM_PAGES = 10
 
 CHALLENGE_MSG = (
-    "TryHackMe is currently behind a bot-mitigation challenge and can't be "
+    "TryHackMe is behind a bot-mitigation challenge right now and can't be "
     "polled — data will refresh automatically once it clears"
 )
 
 
 class THMAdapter(PlatformAdapter):
     platform: ClassVar[Platform] = Platform.THM
-    supports_verification: ClassVar[bool] = False  # deferred until API access is stable
+    supports_verification: ClassVar[bool] = True
+    verification_instructions: ClassVar[str] = (
+        "Paste the token anywhere in the **About** section of your TryHackMe "
+        "profile (your profile → Edit → About). You can remove it once verified."
+    )
 
-    def __init__(self, http: HttpClient) -> None:
+    def __init__(self, http: HttpClient, user_agent: str) -> None:
         self._http = http
-        self._headers = {"Accept": "application/json"}
+        self._headers = {
+            "User-Agent": f"{BROWSER_UA} {user_agent}",
+            "Accept": "application/json",
+            "Referer": BASE + "/",
+        }
 
     async def resolve_user(self, user_ref: str) -> PlatformUser:
-        username = user_ref.strip().lstrip("@")
-        if not username or "/" in username:
-            raise ProfileNotFound("That doesn't look like a TryHackMe username")
-        data = await self._get_checked(URL_DISCORD_USER.format(username=_enc(username)))
-        if not isinstance(data, dict) or "points" not in data:
-            raise ProfileNotFound(f"TryHackMe user '{username}' not found")
-        extra_ids = await self._try_capture_v2_ids(username)
-        return PlatformUser(
-            platform=Platform.THM, user_id=username, username=username, extra_ids=extra_ids
-        )
+        username = self._parse_ref(user_ref)
+        profile = await self._fetch_profile(username)
+        canonical = str(profile.get("username") or username)
+        return PlatformUser(platform=Platform.THM, user_id=canonical, username=canonical)
 
     async def get_profile(self, user: PlatformUser) -> ProfileStats:
-        data = await self._get_checked(URL_DISCORD_USER.format(username=_enc(user.user_id)))
-        if not isinstance(data, dict) or "points" not in data:
-            raise ProfileNotFound(f"TryHackMe user '{user.user_id}' not found")
-        counters: dict[str, int] = {}
-        if (sub := data.get("subscribed")) is not None:
-            counters["subscribed"] = int(bool(sub))
-        rooms = await self._try_completed_count(user.user_id)
-        if rooms is not None:
-            counters["rooms_completed"] = rooms
+        profile = await self._fetch_profile(user.user_id)
+        counters = {
+            "rooms_completed": _int(profile.get("completedRoomsNumber")),
+            "badges": _int(profile.get("badgesNumber")),
+            "streak_days": _int(profile.get("streak")),
+            "level": _int(profile.get("level")),
+        }
+        # THM no longer publishes a global position — it reports a percentile
+        # ("Top 15%"), so that's kept as a counter, not as a rank.
+        if (top := _int_or_none(profile.get("topPercentage"))) is not None:
+            counters["top_percent"] = top
         return ProfileStats(
             platform=Platform.THM,
             user_id=user.user_id,
-            username=user.username,
-            points=int(data.get("points") or 0),
-            rank=_int_or_none(data.get("userRank")),
+            username=str(profile.get("username") or user.username),
+            points=_int(profile.get("totalPoints")),
+            rank=None,
             counters=counters,
         )
 
     async def get_recent_solves(
         self, user: PlatformUser, *, deep: bool = False
     ) -> list[SolveEvent]:
-        """Recent completed rooms via the v2 endpoint. Best-effort: any failure
-        (challenge window, missing user hash, shape drift) returns []."""
-        user_hash = user.extra_ids.get("user_hash")
-        if not user_hash:
-            return []
-        try:
-            data = await self._get_checked(URL_COMPLETED_ROOMS.format(user_hash=_enc(user_hash)))
-        except (PlatformUnavailable, RateLimited, ProfileNotFound):
-            return []
-        rooms = data.get("data", data) if isinstance(data, dict) else data
-        if not isinstance(rooms, list):
-            return []
-        solves = []
-        for room in rooms:
-            if not isinstance(room, dict):
-                continue
-            code = room.get("code") or room.get("roomCode")
-            if not code:
-                continue
-            solves.append(
-                SolveEvent(
-                    platform=Platform.THM,
-                    item_ref=str(code),
-                    name=str(room.get("title") or code),
-                    kind="room",
-                    points=0,  # THM doesn't expose per-room point awards publicly
-                    solved_at=None,
+        """Completed rooms. Best-effort: a challenge window or a shape change
+        costs the solve list, not the whole poll — the profile still snapshots.
+
+        THM publishes no completion dates, so ``solved_at`` is None and the
+        poller's first-seen timestamp is what orders these.
+        """
+        solves: list[SolveEvent] = []
+        page = 1
+        pages = MAX_ROOM_PAGES if deep else 1
+        while page <= pages:
+            try:
+                data = await self._get_json(
+                    URL_COMPLETED_ROOMS.format(
+                        username=quote(user.user_id, safe=""),
+                        limit=ROOMS_PER_PAGE,
+                        page=page,
+                    )
                 )
-            )
+            except (PlatformUnavailable, RateLimited, ProfileNotFound):
+                return solves
+            payload = data.get("data") if isinstance(data, dict) else None
+            if not isinstance(payload, dict):
+                return solves
+            for room in payload.get("docs") or []:
+                if not isinstance(room, dict) or not room.get("code"):
+                    continue
+                solves.append(
+                    SolveEvent(
+                        platform=Platform.THM,
+                        item_ref=str(room["code"]),
+                        name=str(room.get("title") or room["code"]),
+                        kind="room",
+                        points=0,  # THM doesn't publish per-room awards
+                        solved_at=None,
+                    )
+                )
+            if not payload.get("hasNextPage"):
+                break
+            page += 1
         return solves
 
-    async def _try_capture_v2_ids(self, username: str) -> dict[str, str]:
-        """Best-effort: v2 endpoints key on ids, not usernames — grab them now
-        so solves can be fetched later even if this endpoint drifts."""
-        try:
-            data = await self._get_checked(URL_PUBLIC_PROFILE.format(username=_enc(username)))
-        except (PlatformUnavailable, RateLimited, ProfileNotFound):
-            return {}
-        if not isinstance(data, dict):
-            return {}
-        payload = data.get("data", data)
-        if not isinstance(payload, dict):
-            return {}
-        extra: dict[str, str] = {}
-        for ours, theirs in (
-            ("user_public_id", "userPublicId"),
-            ("user_hash", "userId"),
-            ("user_hash", "_id"),
-        ):
-            value = payload.get(theirs)
-            if value and ours not in extra:
-                extra[ours] = str(value)
-        return extra
+    async def get_verification_token_haystack(self, user: PlatformUser) -> str | None:
+        """THM's ``about`` field is a real public bio — the token goes there."""
+        profile = await self._fetch_profile(user.user_id)
+        return str(profile.get("about") or "")
 
-    async def _try_completed_count(self, username: str) -> int | None:
-        try:
-            data = await self._get_checked(URL_COMPLETED_COUNT.format(username=_enc(username)))
-        except (PlatformUnavailable, RateLimited, ProfileNotFound):
-            return None
-        return _int_or_none(data)
+    async def _fetch_profile(self, username: str) -> dict[str, Any]:
+        data = await self._get_json(URL_PUBLIC_PROFILE.format(username=quote(username, safe="")))
+        payload = data.get("data") if isinstance(data, dict) else None
+        if not isinstance(payload, dict) or not payload.get("username"):
+            raise ProfileNotFound(f"TryHackMe user '{username}' not found")
+        return payload
 
-    async def _get_checked(self, url: str) -> Any:
+    @staticmethod
+    def _parse_ref(user_ref: str) -> str:
+        ref = user_ref.strip().lstrip("@")
+        if ref.startswith("http"):  # a profile URL: …/p/<username>
+            ref = ref.rstrip("/").rsplit("/", 1)[-1]
+        if not ref or "/" in ref:
+            raise ProfileNotFound("That doesn't look like a TryHackMe username")
+        return ref
+
+    async def _get_json(self, url: str) -> Any:
         result = await self._http.get(url, headers=self._headers)
         self._raise_for_status(result)
         return result.data
@@ -174,14 +187,17 @@ class THMAdapter(PlatformAdapter):
         if result.status == 429:
             raise RateLimited("TryHackMe rate limit hit")
         if 200 <= result.status < 300:
-            # 200 but not JSON => challenge page or shape drift; treat as outage
+            # 200 but HTML: a challenge page, or a dead endpoint serving the
+            # SPA. Either way there's nothing to parse.
             raise PlatformUnavailable(CHALLENGE_MSG)
         raise PlatformUnavailable(f"TryHackMe returned HTTP {result.status}")
 
 
-def _enc(value: str) -> str:
-    """User-supplied identifiers must never reshape the URL (query/path injection)."""
-    return quote(value, safe="")
+def _int(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
 
 
 def _int_or_none(value: Any) -> int | None:

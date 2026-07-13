@@ -223,20 +223,27 @@ to somebody's Root-Me score directly.
 
 ### TryHackMe reliability
 
-THM has no official public API, and its unofficial endpoints sit behind
-aggressive bot mitigation (Vercel Security Checkpoint) that intermittently
-blocks non-browser clients entirely. hackQueue treats THM as **best-effort**:
-when it's blocked, THM flips to *degraded* in `/health`, boards keep rendering
-the last good data with a staleness marker, and polling backs off until the
-challenge clears. If THM data matters a lot to your server, weight it
-accordingly in `scoring.toml`.
+THM has no official public API, and it puts bot-mitigation (Vercel) in front of
+the unofficial one: a request with a bot-shaped User-Agent gets a 429 and an
+HTML challenge page on *every* endpoint. A browser User-Agent is served
+normally — no cookies, no JS, no headless browser needed — so the adapter sends
+a Chrome UA **with hackQueue's identifier appended**, which keeps us
+attributable in THM's logs rather than pretending to be a person.
+
+That's a heuristic, and THM can tighten it at any time. The challenge detection
+stays: if mitigation comes back, THM flips to *degraded* in `/health`, boards
+keep rendering the last good data with a staleness marker, and nothing else
+breaks.
+
+(Most endpoints documented in the wild are dead — they now serve the SPA's
+HTML. Everything the bot needs comes from `/api/v2/public-profile`.)
 
 ### Verification per platform
 
 | Platform | `/verify` support | Notes |
 |---|---|---|
 | Hack The Box | ✅ social-link token | HTB profiles have no bio field, so `/verify htb` asks you to paste the issued token into any **social link** (Twitter/X, GitHub, LinkedIn, CV) in HTB → Profile Settings — a URL containing it works, e.g. `https://x.com/hq-ab12cd34`. Restore your real link once verified. |
-| TryHackMe | ❌ (planned) | Deferred until API access stabilizes. |
+| TryHackMe | ✅ bio token | Paste the token into the **About** section of your TryHackMe profile. |
 | Root-Me | ❌ not possible | The Root-Me API exposes no bio field and the profile page blocks non-browser clients, so there is nothing the bot can check. Root-Me links always show the ⚠ unverified marker. |
 
 **Unverifiable is not the same as unverified.** On platforms where

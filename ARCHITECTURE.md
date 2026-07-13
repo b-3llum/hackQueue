@@ -227,7 +227,22 @@ solves — the checks that were deferred at design time are now resolved:
 - Landmine (live-verified): auth failures are a clean JSON 401 **only when `Accept: application/json` is sent**; otherwise a 302→HTML login page.
 - Cloudflare fronts the API but a custom UA passes today; no JS challenge.
 
-### TryHackMe (unofficial) — *research surprise #1: currently curl-hostile*
+### TryHackMe (unofficial) — *solved: it was the User-Agent*
+
+**Update 2026-07-13 (live-verified):** the mitigation is UA-based, not a real
+JS challenge. A browser User-Agent gets served JSON with no cookies and no
+headless browser; only bot-shaped UAs are challenged. The adapter now sends a
+Chrome UA with `hackQueue`'s identifier appended (attributable, not
+impersonating). The live surface is `/api/v2/public-profile` — one request
+returns `totalPoints`, `topPercentage`, `completedRoomsNumber`, `badgesNumber`,
+`streak`, `level` and an **`about` bio**, which makes `/verify thm` possible
+after all. Completed rooms come from
+`/api/v2/public-profile/completed-rooms?username=…` (paginated, `docs[]` with
+`code`/`title`). Nearly every v1 endpoint in the community docs now serves the
+SPA's HTML. Challenge detection and graceful degradation are retained in case
+THM tightens the heuristic.
+
+*Original finding, kept for context:*
 
 Every `/api/*` endpoint probed (7 requests, residential IP, custom and Chrome UAs)
 returned **HTTP 429 `text/html` — a Vercel Security Checkpoint JS challenge**
