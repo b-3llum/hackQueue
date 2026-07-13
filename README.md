@@ -127,6 +127,40 @@ back down.
 |---|---|
 | ![light](docs/img/web-leaderboard-light.png) | ![mobile](docs/img/web-leaderboard-mobile.png) |
 
+#### Putting it on a public URL, for free
+
+The bot serves the board itself, so it only needs a way out to the internet.
+A [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/)
+gives you free HTTPS with **no port forwarding and no router config** — your
+box makes an outbound connection, and Cloudflare hands you a hostname.
+
+Quick tunnel (throwaway URL, good for trying it out):
+
+```bash
+cloudflared tunnel --url http://localhost:8080
+# → https://<random-words>.trycloudflare.com
+```
+
+Then set `WEB_BASE_URL` to that URL and restart the bot, so `/config web`
+hands members the right link. Quick-tunnel URLs change on every restart; for a
+stable one, create a named tunnel in the Cloudflare dashboard (Zero Trust →
+Networks → Tunnels), point it at `http://localhost:8080`, put its token in
+`TUNNEL_TOKEN`, and run:
+
+```bash
+docker compose --profile tunnel up -d
+```
+
+Data stays in your database — nothing is copied to a third party, and
+`/config web off` takes a board down immediately.
+
+> **Why not GitHub Pages?** Pages only serves static files: it can't run the
+> bot or hold the database, so it would need the bot to export a JSON bundle
+> and push it on a schedule. That works, but every push writes members'
+> Discord display names and avatars into public git history *permanently* —
+> a bad trade for a board that's about this week's activity. A tunnel keeps
+> the data live and deletable.
+
 ## Configuration reference
 
 Everything env-var-based is documented inline in [`.env.example`](.env.example)

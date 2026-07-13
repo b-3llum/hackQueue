@@ -15,5 +15,21 @@ services:
       # Uncomment to tune scoring without rebuilding:
       # - ./scoring.toml:/app/scoring.toml:ro
 
+  # Optional: put the web leaderboard on a public HTTPS URL for free, without
+  # opening a port on your router.  Start it with:
+  #
+  #     docker compose --profile tunnel up -d
+  #
+  # Set TUNNEL_TOKEN in .env (Cloudflare dashboard → Zero Trust → Networks →
+  # Tunnels → create a tunnel → point it at http://bot:8080). That gives a
+  # STABLE hostname — put it in WEB_BASE_URL so /config web hands out the
+  # right link.
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    profiles: [tunnel]
+    command: tunnel --no-autoupdate run --token ${TUNNEL_TOKEN:?set TUNNEL_TOKEN in .env}
+    depends_on: [bot]
+
 volumes:
   hackqueue-data:
