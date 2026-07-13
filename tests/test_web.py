@@ -12,6 +12,7 @@ from hackqueue.db.models import AccountLink, Claim, Guild, GuildMember, Snapshot
 from hackqueue.services.boards import BoardService
 from hackqueue.services.directory import MemberIdentity
 from hackqueue.services.health import HealthRegistry
+from hackqueue.services.profiles import ProfileService
 from hackqueue.web.server import WebServer
 
 from .test_boards import WEEK_START
@@ -45,7 +46,8 @@ async def client(db):
     registry.register(_StubAdapter())  # type: ignore[arg-type]
     boards = BoardService(db, registry, HealthRegistry(), ScoringConfig.defaults())
     settings = Settings(discord_token="x", web_enabled=True, _env_file=None)
-    server = WebServer(settings, db, boards, _StubDirectory(), _StubClient())  # type: ignore[arg-type]
+    profiles = ProfileService(db, registry)
+    server = WebServer(settings, db, boards, _StubDirectory(), _StubClient(), profiles)  # type: ignore[arg-type]
     async with TestClient(TestServer(server.build_app())) as client:
         yield client
 
@@ -141,3 +143,24 @@ async def test_bad_period_and_board_rejected(db, client):
 async def test_healthz(client):
     body = await (await client.get("/healthz")).json()
     assert body["ok"] is True
+
+
+async def test_member_endpoint_requires_membership(db, client):
+    """You can't read a stranger's stats by pasting their Discord id into a
+    published board's URL."""
+    await seed(db, web_enabled=True)
+    assert (await client.get(f"/api/g/{GUILD}/member/999999")).status == 404
+    assert (await client.get(f"/api/g/{GUILD}/member/nope")).status == 400
+
+
+async def test_member_endpoint_404s_for_unpublished_guild(db, client):
+    await seed(db, web_enabled=False)
+    assert (await client.get(f"/api/g/{GUILD}/member/1")).status == 404
+
+
+async def test_board_rows_carry_movement_and_summary(db, client):
+    await seed(db, web_enabled=True)
+    body = await (await client.get(f"/api/g/{GUILD}?board=htb&period=alltime")).json()
+    assert body["summary"]["members"] == 1
+    assert body["rows"][0]["user_id"] == "1"
+    assert "movement" in body["rows"][0]

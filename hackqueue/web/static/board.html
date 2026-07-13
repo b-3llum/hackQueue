@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Leaderboard · hackQueue</title>
-<meta name="description" content="CTF leaderboard — points gained on Hack The Box, TryHackMe, Root-Me and manual claims.">
+<meta name="description" content="CTF leaderboard — flags and points gained on Hack The Box, TryHackMe, Root-Me and manual claims.">
 <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
@@ -15,12 +15,14 @@
       <div class="eyebrow" id="period-label">Leaderboard</div>
       <h1 id="guild-name">Loading…</h1>
     </div>
-    <div class="brand">hack<b>Queue</b></div>
+    <div class="brand">hackQueue</div>
   </header>
 
+  <div class="summary" id="summary"></div>
+
   <div class="controls">
-    <div class="pills" id="board-pills" role="group" aria-label="Board"></div>
-    <div class="pills" id="period-pills" role="group" aria-label="Period"></div>
+    <div class="tabs" id="board-tabs" role="group" aria-label="Board"></div>
+    <div class="tabs" id="period-tabs" role="group" aria-label="Period"></div>
   </div>
 
   <main id="board" class="board" aria-live="polite"></main>
@@ -32,6 +34,39 @@
     <a href="https://github.com/b-3llum/hackQueue">github.com/b-3llum/hackQueue</a>
   </footer>
 </div>
+
+<div class="scrim" id="scrim"></div>
+<aside class="panel" id="panel" aria-label="Member detail">
+  <div class="panel-head">
+    <div class="avatar avatar-blank" id="panel-avatar"></div>
+    <h2 id="panel-name">—</h2>
+    <button class="panel-close" id="panel-close" type="button">close</button>
+  </div>
+
+  <div class="kpis" id="panel-kpis"></div>
+
+  <section class="section">
+    <h3>Platforms</h3>
+    <div id="panel-platforms"></div>
+  </section>
+
+  <section class="section">
+    <h3>Activity — last 12 weeks</h3>
+    <div class="activity" id="panel-activity"></div>
+    <div class="activity-legend"><span>12 weeks ago</span><span>this week</span></div>
+  </section>
+
+  <section class="section">
+    <h3>Recent solves</h3>
+    <ul class="solves" id="panel-solves"></ul>
+  </section>
+
+  <section class="section">
+    <h3>Manual claims</h3>
+    <div id="panel-claims" class="meta"></div>
+  </section>
+</aside>
+
 <script src="/static/app.js"></script>
 </body>
 </html>

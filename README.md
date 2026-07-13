@@ -6,9 +6,11 @@ runs server leaderboards that reward *this week's grind*, not account age.
 
 ![The web leaderboard](docs/img/web-leaderboard.png)
 
-*The composite board. Each bar is stacked by platform, so you can see at a
-glance where someone's points came from — n0ctis leads on Proving Grounds
-claims (violet), ghostbyte on Hack The Box (amber).*
+*The composite board. Each bar is stacked by platform, so you can see where
+someone's score came from at a glance — n0ctis leads on Proving Grounds claims,
+ghostbyte on Hack The Box. It's monochrome on purpose: the segments are told
+apart by lightness and texture, which survives greyscale printing and
+colourblindness, where colour-coding wouldn't.*
 
 > 🖼️ *screenshot: Discord `/leaderboard` embed — placeholder*
 > 🖼️ *GIF: `/link` → `/profile` → `/leaderboard` flow — placeholder*
@@ -39,7 +41,11 @@ claims (violet), ghostbyte on Hack The Box (amber).*
   recent solves.
 - **Web leaderboard** — `/config web on` publishes the server's board as a
   page anyone can open (opt-in, per server). Light/dark, mobile-friendly, and
-  it shows platform contributions as a stacked bar.
+  it shows platform contributions as a stacked bar. **Click any name** for that
+  member's detail: per-platform scores with a 60-day score sparkline, HTB
+  breakdown (machine owns, Pro Lab flags, bloods), recent solves linked to the
+  box, a 12-week activity strip, solve streak, and approved claims. Boards also
+  show rank movement since the last period and a server summary strip.
 - **One-command setup** — `/setup` creates the channels the bot needs
   (`#leaderboard` for recaps, a moderators-only `#claim-review`) and wires the
   config up in one go.
@@ -122,6 +128,10 @@ sees — a domain, if you put a reverse proxy in front). The bot then serves
 `/g/<server id>` on `WEB_PORT`. **Nothing is published until a moderator runs
 `/config web on` in that server**, and `/config web off` takes it straight
 back down.
+
+Clicking a name opens their detail:
+
+![Member detail](docs/img/web-member-panel.png)
 
 | | |
 |---|---|

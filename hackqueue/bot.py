@@ -15,6 +15,7 @@ from hackqueue.services.claims import ClaimsService
 from hackqueue.services.directory import DirectoryService
 from hackqueue.services.health import HealthRegistry
 from hackqueue.services.linking import LinkingService
+from hackqueue.services.profiles import ProfileService
 from hackqueue.services.recap import RecapService
 from hackqueue.services.snapshots import PollerService
 from hackqueue.web.server import WebServer
@@ -54,8 +55,9 @@ class HackQueueBot(commands.Bot):
         self.poller = PollerService(self.db, self.adapters, settings, self.health)
         self.recap = RecapService(self, self.db, self.boards, self.catalog)
         self.directory = DirectoryService(self.db, self)
+        self.profiles = ProfileService(self.db, self.adapters)
         self.web = (
-            WebServer(settings, self.db, self.boards, self.directory, self)
+            WebServer(settings, self.db, self.boards, self.directory, self, self.profiles)
             if settings.web_enabled
             else None
         )
