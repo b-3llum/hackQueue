@@ -323,6 +323,72 @@ a { color: inherit; }
 }
 .empty code { color: var(--fg); }
 
+/* ── signs of life ────────────────────────────────────────────────────
+ * Every moving thing here reports something true: the pulse means the data
+ * is fresh, the flash means THAT row just changed, the ticker counts real
+ * seconds since the last poll. Nothing moves for decoration.
+ */
+
+.live {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.live::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--fg-dim);
+  animation: pulse 2.4s ease-in-out infinite;
+}
+.live.stale::before {
+  animation: none;
+  background: var(--fg-faint);
+}
+@keyframes pulse {
+  0%, 100% { opacity: 0.25; }
+  50% { opacity: 1; }
+}
+
+/* a row whose score moved since the last refresh */
+@keyframes flash {
+  from { background: var(--sunk); }
+  to { background: none; }
+}
+.row.changed { animation: flash 2.2s ease-out; }
+
+.delta {
+  font-size: 0.66rem;
+  color: var(--fg-dim);
+  margin-left: 6px;
+}
+
+/* the score counts up to its value — you can watch someone gain */
+.score { transition: color 0.3s; }
+.score.rising { color: var(--fg); }
+
+/* sparkline hover readout */
+.spark-wrap { position: relative; }
+.spark-read {
+  position: absolute;
+  top: 0;
+  right: 0;
+  font-size: 0.65rem;
+  color: var(--fg-dim);
+  background: var(--bg);
+  padding: 0 2px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.spark-wrap:hover .spark-read { opacity: 1; }
+.spark .cursor { stroke: var(--fg-faint); stroke-width: 0.6; }
+
+/* activity strip: bars react to the pointer */
+.activity div { transition: background 0.15s, transform 0.15s; transform-origin: bottom; }
+.activity div:hover { transform: scaleY(1.08); background: var(--fg) !important; }
+
 footer {
   margin-top: 26px;
   padding-top: 14px;

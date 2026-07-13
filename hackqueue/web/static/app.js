@@ -9,6 +9,9 @@ const PERIODS = [
 ];
 
 const state = { board: "composite", period: "weekly", data: null, member: null };
+// last score we displayed per member, so a refresh can show what moved
+const lastSeen = new Map();
+let lastUpdate = null;
 const $ = (id) => document.getElementById(id);
 
 // ── board ────────────────────────────────────────────────────────────────
@@ -21,6 +24,7 @@ async function load() {
     return;
   }
   state.data = await res.json();
+  lastUpdate = Date.now();
   render();
 }
 
@@ -52,7 +56,27 @@ function render() {
   $("notice").innerHTML = d.stale.length
     ? `<div class="notice">Showing the last data we have for ${d.stale.join(", ")} — that platform is unreachable right now, so those scores may be behind.</div>`
     : "";
-  $("updated").textContent = `updated ${new Date(d.generated_at).toLocaleString()}`;
+  tickClock();
+}
+
+// The pulse says "this data is live"; it stops when we've lost the server.
+// The ticker counts real seconds since the last successful poll.
+function tickClock() {
+  const el = $("updated");
+  if (!lastUpdate) return;
+  const secs = Math.round((Date.now() - lastUpdate) / 1000);
+  const stale = secs > 180;
+  el.className = stale ? "live stale" : "live";
+  el.textContent = stale ? `last update ${ago(secs)}` : `live · updated ${ago(secs)}`;
+  el.title = new Date(lastUpdate).toLocaleString();
+}
+
+function ago(secs) {
+  if (secs < 5) return "just now";
+  if (secs < 60) return `${secs}s ago`;
+  const mins = Math.round(secs / 60);
+  if (mins < 60) return `${mins}m ago`;
+  return `${Math.round(mins / 60)}h ago`;
 }
 
 function renderTabs(id, items, active, onPick) {
@@ -165,6 +189,21 @@ function renderRows(d) {
       score.className = "score";
       score.textContent =
         d.board === "composite" ? row.value.toFixed(1) : Math.round(row.value).toLocaleString();
+
+      // If this member's score moved since the last refresh, say so — the
+      // flash and the delta are the only reason to animate anything here.
+      const key = `${d.board}:${d.period}:${row.user_id}`;
+      const before = lastSeen.get(key);
+      if (before !== undefined && row.value > before) {
+        el.classList.add("changed");
+        score.classList.add("rising");
+        const delta = document.createElement("span");
+        delta.className = "delta";
+        const gained = row.value - before;
+        delta.textContent = `+${d.board === "composite" ? gained.toFixed(1) : Math.round(gained)}`;
+        score.appendChild(delta);
+      }
+      lastSeen.set(key, row.value);
 
       el.append(rank, avatar, who, bar, move, score);
       return el;
@@ -385,8 +424,34 @@ function sparkline(series) {
   area.setAttribute("d", `${d} L${w},${h} L0,${h} Z`);
   const line = document.createElementNS("http://www.w3.org/2000/svg", "path");
   line.setAttribute("d", d);
-  svg.append(area, line);
-  return svg;
+  const cursor = document.createElementNS("http://www.w3.org/2000/svg", "line");
+  cursor.setAttribute("class", "cursor");
+  cursor.setAttribute("y1", "0");
+  cursor.setAttribute("y2", String(h));
+  cursor.setAttribute("opacity", "0");
+  svg.append(area, line, cursor);
+
+  // Hover reads the series: date + score under the pointer. The chart is only
+  // worth drawing if you can interrogate it.
+  const wrap = document.createElement("div");
+  wrap.className = "spark-wrap";
+  const readout = document.createElement("div");
+  readout.className = "spark-read";
+  wrap.append(svg, readout);
+  wrap.addEventListener("pointermove", (e) => {
+    const box = svg.getBoundingClientRect();
+    const frac = Math.min(Math.max((e.clientX - box.left) / box.width, 0), 1);
+    const i = Math.round(frac * (series.length - 1));
+    const [when, value] = series[i];
+    cursor.setAttribute("x1", String(pts[i][0]));
+    cursor.setAttribute("x2", String(pts[i][0]));
+    cursor.setAttribute("opacity", "1");
+    readout.textContent = `${new Date(when).toLocaleDateString()} · ${value.toLocaleString()}`;
+  });
+  wrap.addEventListener("pointerleave", () => {
+    cursor.setAttribute("opacity", "0");
+  });
+  return wrap;
 }
 
 function renderActivity(weeks) {
@@ -413,8 +478,18 @@ function escapeHtml(s) {
 $("scrim").addEventListener("click", closeMember);
 $("panel-close").addEventListener("click", closeMember);
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") closeMember();
+  if (e.key === "Escape") return closeMember();
+  // j/k walk the board (vim keys — the audience will expect them)
+  if (e.key !== "j" && e.key !== "k") return;
+  const rows = [...document.querySelectorAll(".row")];
+  if (!rows.length) return;
+  const at = rows.indexOf(document.activeElement);
+  const next = e.key === "j" ? Math.min(at + 1, rows.length - 1) : Math.max(at - 1, 0);
+  rows[at === -1 ? 0 : next].focus();
 });
+
+// The ticker runs even between polls, so "updated 40s ago" is always honest.
+setInterval(tickClock, 1000);
 
 load();
 setInterval(load, 120000);

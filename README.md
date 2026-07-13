@@ -42,10 +42,12 @@ colourblindness, where colour-coding wouldn't.*
 - **Web leaderboard** — `/config web on` publishes the server's board as a
   page anyone can open (opt-in, per server). Light/dark, mobile-friendly, and
   it shows platform contributions as a stacked bar. **Click any name** for that
-  member's detail: per-platform scores with a 60-day score sparkline, HTB
-  breakdown (machine owns, Pro Lab flags, bloods), recent solves linked to the
-  box, a 12-week activity strip, solve streak, and approved claims. Boards also
-  show rank movement since the last period and a server summary strip.
+  member's detail: per-platform scores with a 60-day score sparkline (hover it
+  to read any point), HTB breakdown (machine owns, Pro Lab flags, bloods),
+  recent solves linked to the box, a 12-week activity strip, solve streak, and
+  approved claims. Boards show rank movement since the last period, a server
+  summary strip, and a live ticker — when someone's score moves between polls,
+  their row flashes with the delta. `j`/`k` walks the board.
 - **One-command setup** — `/setup` creates the channels the bot needs
   (`#leaderboard` for recaps, a moderators-only `#claim-review`) and wires the
   config up in one go.
