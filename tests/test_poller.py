@@ -60,12 +60,13 @@ async def test_store_dedupes_solves_across_polls(db, poller_and_link):
 
 async def test_poll_one_stores_a_snapshot_immediately(db):
     """Linking should surface stats without waiting for the scheduled cycle."""
+    from sqlalchemy import select
+
     from hackqueue.adapters.base import Platform, ProfileStats
     from hackqueue.adapters.registry import AdapterRegistry
     from hackqueue.config import Settings
     from hackqueue.db.models import AccountLink, Snapshot
     from hackqueue.services.health import HealthRegistry
-    from sqlalchemy import select
 
     class _Stub:
         platform = Platform.HTB
