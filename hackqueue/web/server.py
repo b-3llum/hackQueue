@@ -8,6 +8,7 @@ below, which is the only place that touches the database.
 
 from __future__ import annotations
 
+import contextlib
 from dataclasses import asdict
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -80,6 +81,27 @@ class WebServer:
             await self._runner.cleanup()
             self._runner = None
 
+    def _asset_version(self) -> str:
+        """A token that changes whenever app.js/app.css change, so a redeploy
+        busts the browser cache. Without this, a browser holding an old app.js
+        renders it against the new HTML and the board silently breaks."""
+        stamp = 0.0
+        for name in ("app.js", "app.css"):
+            with contextlib.suppress(OSError):
+                stamp = max(stamp, (STATIC_DIR / name).stat().st_mtime)
+        return hex(int(stamp))[2:]
+
+    def _render_page(self, filename: str) -> web.Response:
+        """Serve an HTML shell with its asset URLs cache-busted, and tell the
+        browser to always revalidate the (tiny) HTML itself."""
+        html = (STATIC_DIR / filename).read_text()
+        version = self._asset_version()
+        html = html.replace("/static/app.css", f"/static/app.css?v={version}")
+        html = html.replace("/static/app.js", f"/static/app.js?v={version}")
+        return web.Response(
+            text=html, content_type="text/html", headers={"Cache-Control": "no-cache"}
+        )
+
     # ── handlers ─────────────────────────────────────────────────────────
 
     async def handle_healthz(self, _: web.Request) -> web.Response:
@@ -87,13 +109,13 @@ class WebServer:
 
     async def handle_index(self, _: web.Request) -> web.Response:
         # No guild directory is published — you reach a board by its link.
-        return web.FileResponse(STATIC_DIR / "index.html")
+        return self._render_page("index.html")
 
     async def handle_board_page(self, request: web.Request) -> web.Response:
         guild = await self._published_guild(request)
         if guild is None:
             raise web.HTTPNotFound(text="No published leaderboard here.")
-        return web.FileResponse(STATIC_DIR / "board.html")
+        return self._render_page("board.html")
 
     async def handle_board_data(self, request: web.Request) -> web.Response:
         guild = await self._published_guild(request)

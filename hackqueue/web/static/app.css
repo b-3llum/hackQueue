@@ -322,6 +322,12 @@ a { color: inherit; }
   border-bottom: 1px solid var(--line);
 }
 .empty code { color: var(--fg); }
+.inline-link {
+  color: var(--fg);
+  border-bottom: 1px solid var(--fg);
+  padding: 0;
+  font-size: inherit;
+}
 
 /* ── signs of life ────────────────────────────────────────────────────
  * Every moving thing here reports something true: the pulse means the data

@@ -116,8 +116,16 @@ function renderSummary(d) {
 function renderRows(d) {
   const board = $("board");
   if (!d.rows.length) {
-    board.innerHTML =
-      '<div class="empty">Nobody has scored this period yet. Link an account in Discord with <code>/link</code> and start pwning.</div>';
+    // A delta board (weekly/monthly) is empty when nobody's GAINED points in
+    // the window — which is normal early in a period. Don't tell people to
+    // link (they may already have); point them at all-time instead.
+    const msg =
+      d.period === "alltime"
+        ? 'Nobody\'s linked an account yet. In Discord: <code>/link htb &lt;id&gt;</code>.'
+        : `No points gained ${d.period === "weekly" ? "this week" : "this month"} yet — the board fills as people solve. Try <button class="tab inline-link" data-period="alltime">all-time</button>.`;
+    board.innerHTML = `<div class="empty">${msg}</div>`;
+    const jump = board.querySelector("[data-period]");
+    if (jump) jump.addEventListener("click", () => { state.period = "alltime"; load(); });
     return;
   }
   const top = Math.max(...d.rows.map((r) => r.value), 0) || 1;
