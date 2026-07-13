@@ -123,17 +123,22 @@ function renderRows(d) {
       d.period === "alltime"
         ? 'Nobody\'s linked an account yet. In Discord: <code>/link htb &lt;id&gt;</code>.'
         : `No points gained ${d.period === "weekly" ? "this week" : "this month"} yet — the board fills as people solve. Try <button class="tab inline-link" data-period="alltime">all-time</button>.`;
+    board.className = "board";
     board.innerHTML = `<div class="empty">${msg}</div>`;
     const jump = board.querySelector("[data-period]");
     if (jump) jump.addEventListener("click", () => { state.period = "alltime"; load(); });
     return;
   }
+  // Drop the movement column entirely when it would read "new" on every row
+  // (fresh board / no previous period). A column identical on every row is noise.
+  const anyMovement = d.rows.some((r) => r.movement !== null && r.movement !== 0);
+  board.className = anyMovement ? "board" : "board hide-move";
   const top = Math.max(...d.rows.map((r) => r.value), 0) || 1;
 
   board.replaceChildren(
     ...d.rows.map((row, i) => {
       const el = document.createElement("button");
-      el.className = i === 0 ? "row leader" : "row";
+      el.className = i === 0 ? "row leader" : i < 3 ? "row podium" : "row";
       el.type = "button";
       el.setAttribute("aria-label", `${row.name} — open details`);
       el.addEventListener("click", () => openMember(row.user_id));
@@ -426,18 +431,32 @@ function sparkline(series) {
   svg.setAttribute("preserveAspectRatio", "none");
   svg.setAttribute("aria-hidden", "true");
 
+  const svgns = "http://www.w3.org/2000/svg";
   const d = pts.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
-  const area = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  const area = document.createElementNS(svgns, "path");
   area.setAttribute("class", "area");
   area.setAttribute("d", `${d} L${w},${h} L0,${h} Z`);
-  const line = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  const line = document.createElementNS(svgns, "path");
   line.setAttribute("d", d);
-  const cursor = document.createElementNS("http://www.w3.org/2000/svg", "line");
+  // The viewBox is stretched to fill the card, so strokes must be
+  // non-scaling or they'd smear — that's why the line read as thin before.
+  line.setAttribute("vector-effect", "non-scaling-stroke");
+  // A round-capped zero-length line renders as a crisp circle at any stretch —
+  // marks the current (latest) value at the end of the trend.
+  const [ex, ey] = pts[pts.length - 1];
+  const dot = document.createElementNS(svgns, "line");
+  dot.setAttribute("class", "dot-mark");
+  dot.setAttribute("x1", ex.toFixed(1));
+  dot.setAttribute("y1", ey.toFixed(1));
+  dot.setAttribute("x2", ex.toFixed(1));
+  dot.setAttribute("y2", ey.toFixed(1));
+  const cursor = document.createElementNS(svgns, "line");
   cursor.setAttribute("class", "cursor");
   cursor.setAttribute("y1", "0");
   cursor.setAttribute("y2", String(h));
+  cursor.setAttribute("vector-effect", "non-scaling-stroke");
   cursor.setAttribute("opacity", "0");
-  svg.append(area, line, cursor);
+  svg.append(area, line, cursor, dot);
 
   // Hover reads the series: date + score under the pointer. The chart is only
   // worth drawing if you can interrogate it.

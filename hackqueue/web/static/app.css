@@ -170,35 +170,53 @@ a { color: inherit; }
 
 .board { border-top: 1px solid var(--line); }
 
+/* Fixed name column so every bar starts on the same x — the board reads as a
+   chart with a real value axis, not rows with a gap in the middle. The
+   `.hide-move` modifier drops the movement column when nobody has moved
+   (a column that says "new" on every row is noise). */
 .row {
   display: grid;
-  grid-template-columns: 34px 26px minmax(110px, 1fr) minmax(90px, 1.6fr) 44px 70px;
+  grid-template-columns: 30px 26px 190px 1fr 46px 72px;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
   width: 100%;
-  padding: 11px 6px;
+  padding: 11px 4px 11px 10px;
   background: none;
   border: 0;
   border-bottom: 1px solid var(--line);
+  border-left: 2px solid transparent;
   color: inherit;
   font: inherit;
   text-align: left;
   cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
 }
-.row:hover { background: var(--panel); }
+.board.hide-move .row {
+  grid-template-columns: 30px 26px 190px 1fr 72px;
+}
+.board.hide-move .move { display: none; }
+.row:hover { background: var(--panel); border-left-color: var(--line-strong); }
 .row:focus-visible { outline: 1px solid var(--fg); outline-offset: -1px; }
 
-.row.leader { padding: 18px 6px; }
-.row.leader .score { font-size: 1.4rem; }
-.row.leader .name { font-size: 1.05rem; }
+/* Podium: the leader gets a solid left accent + size, 2nd/3rd a faint one.
+   Monochrome, so emphasis is weight and rule, never colour. */
+.row.leader {
+  padding: 18px 4px 18px 10px;
+  border-left-color: var(--fg);
+}
+.row.leader .score { font-size: 1.45rem; }
+.row.leader .name { font-size: 1.05rem; font-weight: 600; }
 .row.leader .avatar { width: 34px; height: 34px; }
+.row.podium { border-left-color: var(--line-strong); }
 
 .rank {
   font-size: 0.8rem;
   color: var(--fg-faint);
   font-variant-numeric: tabular-nums;
+  letter-spacing: 0.03em;
 }
-.row.leader .rank { color: var(--fg); }
+.row.leader .rank,
+.row.podium .rank { color: var(--fg); }
 
 .avatar {
   width: 24px;
@@ -528,8 +546,9 @@ footer {
   height: 34px;
   margin-top: 10px;
 }
-.spark path { fill: none; stroke: var(--fg-dim); stroke-width: 1.25; }
-.spark .area { fill: var(--sunk); stroke: none; }
+.spark path { fill: none; stroke: var(--fg); stroke-width: 1.5; stroke-linejoin: round; }
+.spark .area { fill: var(--fg); opacity: 0.09; stroke: none; }
+.spark .dot-mark { stroke: var(--fg); stroke-width: 4; stroke-linecap: round; }
 
 .solves { list-style: none; margin: 0; padding: 0; }
 .solves li {
@@ -576,9 +595,11 @@ footer {
 }
 
 @media (max-width: 640px) {
-  .row {
+  .row,
+  .board.hide-move .row {
     grid-template-columns: 26px 24px minmax(0, 1fr) auto;
     gap: 10px;
+    padding-left: 8px;
   }
   .rank { grid-column: 1; }
   .avatar { grid-column: 2; }
