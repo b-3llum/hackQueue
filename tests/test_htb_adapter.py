@@ -50,18 +50,15 @@ def adapter(http):
 
 async def test_get_profile(adapter):
     with aioresponses() as m:
-        m.get(URL_PROFILE_BASIC.format(user_id="1337"), payload=PROFILE_PAYLOAD)
+        _mock_all(m)
         stats = await adapter.get_profile(USER)
-    assert stats.points == 420
     assert stats.rank == 12
-    assert stats.counters == {
-        "user_owns": 150,
-        "system_owns": 145,
-        "user_bloods": 3,
-        "system_bloods": 2,
-        "respects": 999,
-    }
     assert stats.username == "0xdf"
+    assert stats.counters["user_owns"] == 150
+    assert stats.counters["system_owns"] == 145
+    assert stats.counters["user_bloods"] == 3
+    assert stats.counters["system_bloods"] == 2
+    assert stats.counters["respects"] == 999
 
 
 async def test_401_raises_auth_expired(adapter):
@@ -260,3 +257,65 @@ def test_normalize_machine_accepts_both_rating_keys():
     assert A._normalize_machine({"id": 1, "star": 4}, retired=False)["stars"] == 4.0
     assert A._normalize_machine({"id": 1, "stars": "4.6"}, retired=True)["stars"] == 4.6
     assert A._normalize_machine({"id": 1}, retired=False)["stars"] is None
+
+
+PROLAB_PAYLOAD = {
+    "profile": {
+        "prolabs": [
+            {"name": "Dante", "owned_flags": 27, "total_flags": 27, "completion_percentage": 100},
+            {"name": "Zephyr", "owned_flags": 5, "total_flags": 17, "completion_percentage": 29},
+            {"name": "RastaLabs", "owned_flags": 0, "total_flags": 20, "completion_percentage": 0},
+        ]
+    }
+}
+FORTRESS_PAYLOAD = {
+    "profile": {"fortresses": [{"name": "Jet", "owned_flags": 3, "total_flags": 11}]}
+}
+CHALLENGE_PAYLOAD = {"profile": {"challenge_owns": {"solved": 6, "total": 838}}}
+
+
+def _mock_all(m, *, prolab=PROLAB_PAYLOAD, fortress=FORTRESS_PAYLOAD, challenges=CHALLENGE_PAYLOAD):
+    from hackqueue.adapters.htb import (
+        URL_PROGRESS_CHALLENGES,
+        URL_PROGRESS_FORTRESS,
+        URL_PROGRESS_PROLAB,
+    )
+
+    m.get(URL_PROFILE_BASIC.format(user_id="1337"), payload=PROFILE_PAYLOAD)
+    m.get(URL_PROGRESS_CHALLENGES.format(user_id="1337"), payload=challenges)
+    m.get(URL_PROGRESS_PROLAB.format(user_id="1337"), payload=prolab)
+    m.get(URL_PROGRESS_FORTRESS.format(user_id="1337"), payload=fortress)
+
+
+async def test_score_counts_flags_not_htb_rank_points(adapter):
+    """HTB zeroes a machine's points when it retires, so rank points are a dead
+    metric (0 for someone with 8 owns and a finished Pro Lab). Score flags."""
+    with aioresponses() as m:
+        _mock_all(m)
+        stats = await adapter.get_profile(USER)
+    # 150 user + 145 system owns, 6 challenges, 27+5 Pro Lab, 3 Fortress
+    assert stats.points == 150 + 145 + 6 + 32 + 3
+    assert stats.counters["prolab_flags"] == 32
+    assert stats.counters["prolabs_completed"] == 1  # Dante at 100%
+    assert stats.counters["fortress_flags"] == 3
+    assert stats.counters["challenges"] == 6
+    assert stats.counters["htb_rank_points"] == 420  # kept for reference only
+
+
+async def test_missing_progress_sections_cost_only_their_flags(adapter):
+    """A 404 on Pro Labs must not fail the whole poll — the member still gets
+    a snapshot with their machine owns."""
+    from hackqueue.adapters.htb import (
+        URL_PROGRESS_CHALLENGES,
+        URL_PROGRESS_FORTRESS,
+        URL_PROGRESS_PROLAB,
+    )
+
+    with aioresponses() as m:
+        m.get(URL_PROFILE_BASIC.format(user_id="1337"), payload=PROFILE_PAYLOAD)
+        m.get(URL_PROGRESS_CHALLENGES.format(user_id="1337"), status=404, payload={})
+        m.get(URL_PROGRESS_PROLAB.format(user_id="1337"), status=404, payload={})
+        m.get(URL_PROGRESS_FORTRESS.format(user_id="1337"), status=404, payload={})
+        stats = await adapter.get_profile(USER)
+    assert stats.points == 150 + 145  # machine owns still counted
+    assert stats.counters["prolab_flags"] == 0

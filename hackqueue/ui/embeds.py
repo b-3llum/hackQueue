@@ -110,7 +110,10 @@ def profile_embed(
         stats = "no data yet"
         if snap is not None:
             rank = f" · rank #{snap.rank:,}" if snap.rank else ""
-            stats = f"{snap.points:,} pts{rank}"
+            unit = "flags" if link.platform == Platform.HTB.value else "pts"
+            stats = f"{snap.points:,} {unit}{rank}"
+            if detail := _counter_detail(link.platform, snap.counters):
+                stats += f"\n{detail}"
         embed.add_field(
             name=f"{platform_label(link.platform)} — {link.platform_username} ({badge})",
             value=f"{stats}{status}",
@@ -126,6 +129,28 @@ def profile_embed(
         ]
         embed.add_field(name="Recent solves", value="\n".join(lines), inline=False)
     return embed
+
+
+def _counter_detail(platform: str, counters: dict) -> str:
+    """One line of what actually makes up a score — HTB's flags come from four
+    different places, and 'Dante 27/27' is the interesting part."""
+    if platform != Platform.HTB.value or not counters:
+        return ""
+    bits = []
+    owns = int(counters.get("user_owns", 0)) + int(counters.get("system_owns", 0))
+    if owns:
+        bits.append(f"{owns} machine owns")
+    if challenges := int(counters.get("challenges", 0)):
+        bits.append(f"{challenges} challenges")
+    if prolab := int(counters.get("prolab_flags", 0)):
+        done = int(counters.get("prolabs_completed", 0))
+        bits.append(f"{prolab} Pro Lab flags" + (f" ({done} completed)" if done else ""))
+    if fortress := int(counters.get("fortress_flags", 0)):
+        bits.append(f"{fortress} Fortress flags")
+    bloods = int(counters.get("user_bloods", 0)) + int(counters.get("system_bloods", 0))
+    if bloods:
+        bits.append(f"🩸 {bloods}")
+    return "-# " + " · ".join(bits) if bits else ""
 
 
 def claim_embed(claim: Claim, cfg_name: str, image_ref: str | None = None) -> discord.Embed:

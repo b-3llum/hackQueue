@@ -184,6 +184,19 @@ hard = 30
 insane = 40
 ```
 
+### What each platform's "points" mean
+
+| Platform | Score | Why |
+|---|---|---|
+| Hack The Box | **flags captured** — machine user/root owns + solved challenges + Pro Lab and Fortress flags | HTB *removes* a machine's points when it retires, so its own `points` field reads 0 for anyone grinding retired boxes or Pro Labs (verified: an account with 8 owns and a completed Dante reports 0). Flags are what HTB actually counts, need no invented weights, and let Pro Lab progress show up at all. |
+| TryHackMe | THM points | THM's own metric, as reported by its API. |
+| Root-Me | Root-Me score | Root-Me's own metric. |
+| Claims | configured per-difficulty points | From `scoring.toml`. |
+
+Scales differ per platform, which is fine: the composite board normalizes each
+platform within the server before weighting, so nobody's HTB flags are compared
+to somebody's Root-Me score directly.
+
 ### How scoring works (the exact math)
 
 1. The poller snapshots every linked profile on a per-platform interval
