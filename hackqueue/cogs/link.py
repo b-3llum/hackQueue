@@ -49,6 +49,9 @@ class LinkCog(commands.Cog):
             )
             return
         await self.bot.directory.remember(interaction.guild_id, interaction.user)
+        # Pull the first snapshot right now so stats show up in seconds, not at
+        # the next scheduled poll. Backgrounded so the reply stays instant.
+        self.bot.schedule_background(self.bot.poller.poll_one(link.id), "poll_on_link")
         adapter = self.bot.adapters.get(plat)
         verify_hint = (
             f"\nTip: `/verify {plat.value}` proves account ownership and removes the ⚠ marker."
@@ -57,7 +60,7 @@ class LinkCog(commands.Cog):
         )
         await interaction.followup.send(
             f"✅ Linked **{link.platform_username}** on {platform.name}. "
-            f"Your stats will appear on the boards after the next poll.{verify_hint}\n"
+            f"Fetching your stats now — run `/profile` in a moment.{verify_hint}\n"
             f"-# hackQueue stores your Discord ID, this account reference, and score "
             f"snapshots. `/unlink {plat.value}` deletes all of it.",
             ephemeral=True,

@@ -14,11 +14,15 @@ from hackqueue.services.scoring import Period
 if TYPE_CHECKING:
     from hackqueue.services.boards import Board
     from hackqueue.services.health import HealthRegistry
+    from hackqueue.services.seasons import Season, SeasonStanding
 
 COLOR_OK = 0x2ECC71
 COLOR_INFO = 0x5865F2
 COLOR_WARN = 0xE67E22
 COLOR_ERROR = 0xE74C3C
+COLOR_SEASON = 0x9146FF  # HTB seasonal purple
+
+DIFFICULTY_EMOJI = {"easy": "🟢", "medium": "🟡", "hard": "🔴", "insane": "⚫"}
 
 MEDALS = ("🥇", "🥈", "🥉")
 PAGE_SIZE = 10
@@ -281,3 +285,93 @@ def health_embed(
         inline=False,
     )
     return embed
+
+
+def _difficulty_badge(difficulty: str | None) -> str:
+    if not difficulty:
+        return ""
+    return f"{DIFFICULTY_EMOJI.get(difficulty, '')} {difficulty.title()}".strip()
+
+
+def season_drop_embed(season: Season) -> discord.Embed:
+    """The weekly-drop announcement — the moment season-grinders live for."""
+    machine = season.live_machine
+    assert machine is not None
+    week = ""
+    if season.current_week and season.total_weeks:
+        week = f" · week {season.current_week}/{season.total_weeks}"
+    embed = discord.Embed(
+        title=f"📦 New drop: {machine.name}",
+        url=machine.url,
+        color=COLOR_SEASON,
+        description=(
+            f"**{season.name} — {season.subtitle}**{week}\n"
+            f"This week's box is live. First blood is up for grabs. 🩸"
+        ),
+    )
+    if machine.os:
+        embed.add_field(name="OS", value=machine.os)
+    badge = _difficulty_badge(machine.difficulty)
+    if badge:
+        embed.add_field(name="Difficulty", value=badge)
+    if machine.release_time:
+        embed.add_field(name="Dropped", value=f"<t:{int(machine.release_time.timestamp())}:R>")
+    embed.add_field(
+        name="Go",
+        value=f"[Spawn it on HTB]({machine.url}) · `/season` for the server standings",
+        inline=False,
+    )
+    embed.set_footer(text="Root it before the server does.")
+    return embed
+
+
+def season_embed(season: Season, standings: list[SeasonStanding], guild_name: str) -> discord.Embed:
+    week = ""
+    if season.current_week and season.total_weeks:
+        week = f"Week {season.current_week} of {season.total_weeks}"
+    embed = discord.Embed(
+        title=f"🏔️ {season.name} — {season.subtitle}",
+        color=COLOR_SEASON,
+        description=week + (f" · {season.players:,} players worldwide" if season.players else ""),
+    )
+    if season.ends_at:
+        embed.description += f"\nEnds <t:{int(season.ends_at.timestamp())}:R>"
+
+    if season.live_machine is not None:
+        m = season.live_machine
+        badge = _difficulty_badge(m.difficulty)
+        embed.add_field(
+            name="This week's box",
+            value=f"[{m.name}]({m.url}) — {m.os or '?'} · {badge}",
+            inline=False,
+        )
+
+    released = len(season.released_machines)
+    if standings:
+        lines = []
+        for i, s in enumerate(standings[:10]):
+            if s.owned == 0 and i >= 3:
+                break  # don't list a wall of zeroes
+            marker = MEDALS[i] if i < 3 else f"`#{i + 1}`"
+            bar = _progress_bar(s.owned, s.total)
+            lines.append(f"{marker} <@{s.discord_user_id}> {bar} **{s.owned}/{s.total}**")
+        embed.add_field(
+            name=f"{guild_name} — season boxes rooted",
+            value="\n".join(lines) or "Nobody's rooted a season box yet — be first.",
+            inline=False,
+        )
+    else:
+        embed.add_field(
+            name=f"{guild_name} standings",
+            value="No linked HTB members yet. `/link htb <id>` to join the race.",
+            inline=False,
+        )
+    embed.set_footer(text=f"{released} of {season.total_weeks or released} boxes released so far")
+    return embed
+
+
+def _progress_bar(done: int, total: int, width: int = 10) -> str:
+    if total <= 0:
+        return ""
+    filled = round(width * done / total)
+    return "▰" * filled + "▱" * (width - filled)

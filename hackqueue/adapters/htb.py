@@ -52,6 +52,9 @@ URL_MACHINES_RETIRED = BASE_V4 + "/machine/list/retired/paginated?per_page=100&p
 URL_PROGRESS_PROLAB = BASE_V4 + "/user/profile/progress/prolab/{user_id}"
 URL_PROGRESS_FORTRESS = BASE_V4 + "/user/profile/progress/fortress/{user_id}"
 URL_PROGRESS_CHALLENGES = BASE_V4 + "/user/profile/progress/challenges/{user_id}"
+URL_SEASON_LIST = BASE_V4 + "/season/list"
+URL_SEASON_MACHINE_ACTIVE = BASE_V4 + "/season/machine/active"
+URL_SEASON_MACHINES = BASE_V4 + "/season/machines/{season_id}"
 MACHINE_WEB_URL = "https://app.hackthebox.com/machines/{ref}"
 
 _PROFILE_URL_RE = re.compile(r"(?:app\.hackthebox\.com/(?:profile|users)/)(\d+)", re.I)
@@ -248,6 +251,39 @@ class HTBAdapter(PlatformAdapter):
             "release_date": _parse_date(m.get("release")),
             "url": MACHINE_WEB_URL.format(ref=m.get("id", "")),
         }
+
+    # ── HTB Seasons ──────────────────────────────────────────────────────
+
+    async def active_season(self) -> dict[str, Any] | None:
+        """The season currently running, or None between seasons. Includes
+        ``current_week``/``weeks`` so callers can show 'week 8 of 13'."""
+        result = await self._http.get(URL_SEASON_LIST, headers=self._headers)
+        self._raise_for_status(result)
+        seasons = (result.data or {}).get("data") or []
+        for season in seasons:
+            if isinstance(season, dict) and (
+                season.get("state") == "active" or season.get("active")
+            ):
+                return season
+        return None
+
+    async def active_season_machine(self) -> dict[str, Any] | None:
+        """The machine dropped this week for the active season (None off-season)."""
+        result = await self._http.get(URL_SEASON_MACHINE_ACTIVE, headers=self._headers)
+        if result.status == 404:
+            return None
+        self._raise_for_status(result)
+        machine = (result.data or {}).get("data")
+        return machine if isinstance(machine, dict) else None
+
+    async def season_machines(self, season_id: int) -> list[dict[str, Any]]:
+        """The full weekly-drop schedule for a season (released + upcoming)."""
+        result = await self._http.get(
+            URL_SEASON_MACHINES.format(season_id=season_id), headers=self._headers
+        )
+        self._raise_for_status(result)
+        machines = (result.data or {}).get("data") or []
+        return [m for m in machines if isinstance(m, dict)]
 
     async def _fetch_profile(self, user_id: str) -> dict[str, Any]:
         result = await self._http.get(

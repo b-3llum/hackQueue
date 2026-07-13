@@ -1,7 +1,8 @@
 # hackQueue
 
 A Discord bot that tracks your community's progress across CTF/hacking platforms —
-**Hack The Box**, **TryHackMe**, **Root-Me**, and **OffSec Proving Grounds** — and
+**Hack The Box** (incl. Seasons), **TryHackMe**, **Root-Me**, and manual-claim
+platforms (**OffSec Proving Grounds**, **Hack Smarter**, **Virtual Hacking Labs**) — and
 runs server leaderboards that reward *this week's grind*, not account age.
 
 ![The web leaderboard](docs/img/web-leaderboard.png)
@@ -25,10 +26,11 @@ colourblindness, where colour-coding wouldn't.*
   - per-platform boards (raw points, all-time),
   - **delta boards** (points gained this week/month — the default),
   - a **composite board** blending all platforms with configurable weights.
-- **Manual claims** — `/solved pg <box> [proof screenshot]` for platforms with
-  no API (Proving Grounds ships by default). Claims queue to a mod channel with
-  Approve/Deny buttons and award configurable per-difficulty points. Adding
-  VulnHub or PortSwigger labs is a few lines of TOML, zero code.
+- **Manual claims** — `/solved <platform> <box> [proof screenshot]` for platforms
+  with no public API. Proving Grounds, **Hack Smarter** and **Virtual Hacking
+  Labs** ship configured; claims queue to a mod channel with Approve/Deny
+  buttons and award per-difficulty points. Adding another (VulnHub, PortSwigger)
+  is a few lines of `scoring.toml`, zero code.
 - **Box recommendations** — `/suggest [difficulty] [os] [tag]` recommends HTB
   boxes you haven't solved, and `/box <name>` shows an info card with the
   matching [IppSec](https://ippsec.rocks) walkthrough video when one exists
@@ -48,6 +50,10 @@ colourblindness, where colour-coding wouldn't.*
   approved claims. Boards show rank movement since the last period, a server
   summary strip, and a live ticker — when someone's score moves between polls,
   their row flashes with the delta. `j`/`k` walks the board.
+- **HTB Seasons** — `/season` shows the active season, this week's box, and a
+  live race board of how many season machines each member has rooted. When a
+  new box drops (Saturdays), the bot announces it in your channel — first blood
+  is on. 🩸
 - **One-command setup** — `/setup` creates the channels the bot needs
   (`#leaderboard` for recaps, a moderators-only `#claim-review`) and wires the
   config up in one go.

@@ -17,7 +17,9 @@ import aiohttp
 from sqlalchemy import select
 
 from hackqueue.adapters.base import (
+    AdapterError,
     AuthExpired,
+    Platform,
     PlatformAdapter,
     PlatformUnavailable,
     ProfileNotFound,
@@ -124,6 +126,33 @@ class PollerService:
             await self._store(link, stats, solves)
             self._health.record_success(platform)
             await asyncio.sleep(PER_LINK_SPACING_SECONDS)
+
+    async def poll_one(self, link_id: int) -> bool:
+        """Poll a single link right now — used just after /link so a member's
+        stats appear within seconds instead of at the next scheduled cycle.
+        Returns True if a snapshot was stored. Never raises: a failure here is
+        cosmetic (the scheduled poll will retry), so it's logged and swallowed."""
+        async with self._db.session() as session:
+            link = await session.get(AccountLink, link_id)
+        if link is None:
+            return False
+        adapter = self._adapters.get(Platform(link.platform))
+        if adapter is None:
+            return False
+        try:
+            deep = not await self._has_snapshot(link.id)
+            stats, solves = await adapter.poll(link_to_platform_user(link), deep=deep)
+        except ProfileNotFound as exc:
+            await self._set_link_status(
+                link.id, "private" if isinstance(exc, ProfilePrivate) else "not_found"
+            )
+            return False
+        except (AdapterError, aiohttp.ClientError, TimeoutError) as exc:
+            log.info("immediate_poll_failed", link_id=link_id, error=str(exc))
+            return False
+        await self._store(link, stats, solves)
+        self._health.record_success(adapter.platform)
+        return True
 
     async def _store(
         self, link: AccountLink, stats: ProfileStats, solves: list[SolveEvent]

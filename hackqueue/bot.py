@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import Coroutine
+
 import discord
 from discord.ext import commands
 
@@ -13,10 +16,12 @@ from hackqueue.services.boards import BoardService
 from hackqueue.services.catalog import CatalogService
 from hackqueue.services.claims import ClaimsService
 from hackqueue.services.directory import DirectoryService
+from hackqueue.services.dropwatch import DropWatchService
 from hackqueue.services.health import HealthRegistry
 from hackqueue.services.linking import LinkingService
 from hackqueue.services.profiles import ProfileService
 from hackqueue.services.recap import RecapService
+from hackqueue.services.seasons import SeasonService
 from hackqueue.services.snapshots import PollerService
 from hackqueue.web.server import WebServer
 
@@ -29,6 +34,7 @@ EXTENSIONS = (
     "hackqueue.cogs.leaderboard",
     "hackqueue.cogs.claims",
     "hackqueue.cogs.boxes",
+    "hackqueue.cogs.seasons",
     "hackqueue.cogs.admin",
 )
 
@@ -54,8 +60,12 @@ class HackQueueBot(commands.Bot):
         self.catalog = CatalogService(self.db, self.http_client, self.adapters, settings)
         self.poller = PollerService(self.db, self.adapters, settings, self.health)
         self.recap = RecapService(self, self.db, self.boards, self.catalog)
+        self.seasons = SeasonService(self.db, self.adapters)
+        self.dropwatch = DropWatchService(self, self.db, self.seasons)
         self.directory = DirectoryService(self.db, self)
         self.profiles = ProfileService(self.db, self.adapters)
+        #: Strong refs to fire-and-forget tasks so they aren't GC'd mid-flight.
+        self._bg_tasks: set[asyncio.Task[object]] = set()
         self.web = (
             WebServer(settings, self.db, self.boards, self.directory, self, self.profiles)
             if settings.web_enabled
@@ -76,8 +86,23 @@ class HackQueueBot(commands.Bot):
         self.poller.start()
         self.catalog.start()
         self.recap.start()
+        self.dropwatch.start()
         if self.web is not None:
             await self.web.start()
+
+    def schedule_background(self, coro: Coroutine[object, object, object], name: str) -> None:
+        """Run a coroutine fire-and-forget, keeping a ref so it survives GC and
+        logging any exception (a background failure must never bubble up into a
+        command handler)."""
+        task = asyncio.create_task(coro, name=name)
+        self._bg_tasks.add(task)
+        task.add_done_callback(self._bg_tasks.discard)
+
+        def _log_exc(t: asyncio.Task[object]) -> None:
+            if not t.cancelled() and t.exception() is not None:
+                log.warning("background_task_failed", task=name, error=str(t.exception()))
+
+        task.add_done_callback(_log_exc)
 
     async def on_ready(self) -> None:
         log.info("bot_connected", user=str(self.user), guilds=len(self.guilds))
@@ -87,6 +112,7 @@ class HackQueueBot(commands.Bot):
         await self.poller.stop()
         await self.catalog.stop()
         await self.recap.stop()
+        await self.dropwatch.stop()
         if self.web is not None:
             await self.web.stop()
         await self.http_client.close()
