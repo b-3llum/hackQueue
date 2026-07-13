@@ -87,15 +87,25 @@ def profile_embed(
     latest: dict[int, Snapshot | None],
     recent_solves: list[Solve],
     approved_claims: int,
+    verifiable: set[str] | None = None,
 ) -> discord.Embed:
+    """``verifiable``: platforms where ownership verification is possible at
+    all. A link on any other platform is shown as 'no verification' — it is not
+    the member's fault, and no ⚠ is implied."""
     embed = discord.Embed(title=f"{member.display_name}'s profile", color=COLOR_INFO)
     embed.set_thumbnail(url=member.display_avatar.url)
     if not links:
         embed.description = "No linked accounts. Use `/link` to add one."
         return embed
+    verifiable = verifiable if verifiable is not None else set()
     for link in links:
         snap = latest.get(link.id)
-        badge = "✅" if link.verified else "⚠ unverified"
+        if link.verified:
+            badge = "✅ verified"
+        elif link.platform in verifiable:
+            badge = "⚠ unverified"
+        else:
+            badge = "no verification on this platform"
         status = "" if link.status == "ok" else f" · ⚠ {link.status.replace('_', ' ')}"
         stats = "no data yet"
         if snap is not None:

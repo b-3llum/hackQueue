@@ -56,8 +56,11 @@ class ProfileCog(commands.Cog):
                     Claim.status == "approved",
                 )
             )
+        verifiable = {
+            adapter.platform.value for adapter in self.bot.adapters if adapter.supports_verification
+        }
         await interaction.followup.send(
-            embed=profile_embed(target, links, latest, recent, int(approved or 0))
+            embed=profile_embed(target, links, latest, recent, int(approved or 0), verifiable)
         )
 
 

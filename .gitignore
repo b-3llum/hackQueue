@@ -3,6 +3,16 @@
 .env.*
 !.env.example
 
+# Stray media dropped in the repo root (screenshots, recordings) —
+# never let a blanket `git add -A` sweep these into a public repo.
+/*.jpg
+/*.jpeg
+/*.png
+/*.gif
+/*.mp4
+/*.mkv
+/*.webm
+
 # Data
 data/
 *.db

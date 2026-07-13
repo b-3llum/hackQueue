@@ -21,6 +21,7 @@ GUILD = 555
 
 class _StubAdapter:
     platform = Platform.HTB
+    supports_verification = True
 
 
 class _StubDirectory:

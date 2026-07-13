@@ -216,8 +216,11 @@ accordingly in `scoring.toml`.
 | TryHackMe | ❌ (planned) | Deferred until API access stabilizes. |
 | Root-Me | ❌ not possible | The Root-Me API exposes no bio field and the profile page blocks non-browser clients, so there is nothing the bot can check. Root-Me links always show the ⚠ unverified marker. |
 
-Servers that don't want unverified links on the board can hide them with
-`/config require-verified true`.
+**Unverifiable is not the same as unverified.** On platforms where
+verification is impossible (Root-Me, TryHackMe), links are shown plainly — no
+⚠ marker, and `/config require-verified true` does not hide them, since no
+link there could ever satisfy it. The ⚠ only appears where a member *could*
+verify and hasn't (today: Hack The Box).
 
 ## Privacy
 

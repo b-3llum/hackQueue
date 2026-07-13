@@ -24,6 +24,7 @@ WEEK_START = period_start(Period.WEEKLY, NOW)  # Monday 2026-03-02 00:00 UTC
 
 class _StubAdapter:
     platform = Platform.HTB
+    supports_verification = True  # HTB can be verified (social-link token)
 
 
 @pytest.fixture
@@ -217,3 +218,127 @@ async def test_claim_totals_exclude_hidden_and_non_members(db, boards):
 async def test_empty_guild_board(db, boards):
     board = await boards.platform_board(GUILD, Platform.HTB, Period.WEEKLY, as_of=NOW)
     assert board.rows == []
+
+
+class _RootMeStub:
+    """Root-Me exposes nothing the bot can check — verification is impossible."""
+
+    platform = Platform.ROOTME
+    supports_verification = False
+
+
+class _HTBStub:
+    platform = Platform.HTB
+    supports_verification = True
+
+
+@pytest.fixture
+def mixed_registry():
+    reg = AdapterRegistry()
+    reg.register(_HTBStub())  # type: ignore[arg-type]
+    reg.register(_RootMeStub())  # type: ignore[arg-type]
+    return reg
+
+
+@pytest.fixture
+def mixed_boards(db, mixed_registry):
+    return BoardService(db, mixed_registry, HealthRegistry(), ScoringConfig.defaults())
+
+
+async def seed_mixed(db, *, require_verified: bool = False):
+    """One member: HTB verified, Root-Me unverifiable (it can never be verified)."""
+    async with db.session() as session, session.begin():
+        session.add(Guild(guild_id=GUILD, require_verified=require_verified))
+        session.add(GuildMember(guild_id=GUILD, discord_user_id=1))
+        htb = AccountLink(
+            discord_user_id=1,
+            platform="htb",
+            platform_user_id="11",
+            platform_username="xb3llum",
+            verified=True,
+        )
+        rootme = AccountLink(
+            discord_user_id=1,
+            platform="rootme",
+            platform_user_id="22",
+            platform_username="xbellum",
+            verified=False,  # and it can never become True
+        )
+        session.add_all([htb, rootme])
+        await session.flush()
+        for link in (htb, rootme):
+            session.add_all(
+                [
+                    Snapshot(
+                        link_id=link.id,
+                        taken_at=WEEK_START - timedelta(days=1),
+                        points=100,
+                        counters={},
+                    ),
+                    Snapshot(
+                        link_id=link.id,
+                        taken_at=WEEK_START + timedelta(hours=2),
+                        points=150,
+                        counters={},
+                    ),
+                ]
+            )
+
+
+async def test_unverifiable_platform_is_not_flagged(db, mixed_boards):
+    """Root-Me can't do verification, so its rows must not wear the ⚠ marker —
+    the member did nothing wrong."""
+    await seed_mixed(db)
+    board = await mixed_boards.platform_board(GUILD, Platform.ROOTME, Period.WEEKLY, as_of=NOW)
+    assert board.rows[0].verified is True
+
+
+async def test_unverifiable_link_does_not_taint_composite(db, mixed_boards):
+    """A permanently-unverifiable Root-Me link must not make a member with a
+    verified HTB link show as unverified forever."""
+    await seed_mixed(db)
+    board = await mixed_boards.composite_board(GUILD, Period.WEEKLY, as_of=NOW)
+    assert board.rows[0].verified is True
+
+
+async def test_verifiable_but_unverified_still_flags_composite(db, mixed_boards):
+    async with db.session() as session, session.begin():
+        session.add(Guild(guild_id=GUILD))
+        session.add(GuildMember(guild_id=GUILD, discord_user_id=1))
+        link = AccountLink(
+            discord_user_id=1,
+            platform="htb",
+            platform_user_id="11",
+            platform_username="x",
+            verified=False,  # HTB *can* be verified, so this one counts
+        )
+        session.add(link)
+        await session.flush()
+        session.add_all(
+            [
+                Snapshot(
+                    link_id=link.id,
+                    taken_at=WEEK_START - timedelta(days=1),
+                    points=10,
+                    counters={},
+                ),
+                Snapshot(
+                    link_id=link.id,
+                    taken_at=WEEK_START + timedelta(hours=2),
+                    points=90,
+                    counters={},
+                ),
+            ]
+        )
+    board = await mixed_boards.composite_board(GUILD, Period.WEEKLY, as_of=NOW)
+    assert board.rows[0].verified is False
+
+
+async def test_require_verified_keeps_unverifiable_platforms_on_the_board(db, mixed_boards):
+    """require_verified must not silently empty the Root-Me/THM boards — no link
+    there could ever satisfy it."""
+    await seed_mixed(db, require_verified=True)
+    rootme = await mixed_boards.platform_board(GUILD, Platform.ROOTME, Period.WEEKLY, as_of=NOW)
+    htb = await mixed_boards.platform_board(GUILD, Platform.HTB, Period.WEEKLY, as_of=NOW)
+    assert [r.label for r in rootme.rows] == ["xbellum"]  # still shown
+    assert [r.label for r in htb.rows] == ["xb3llum"]  # verified, so also shown

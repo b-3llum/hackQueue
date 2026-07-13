@@ -58,6 +58,17 @@ class BoardService:
         self._health = health
         self._scoring = scoring_config
 
+    def _verifiable(self, platform: Platform) -> bool:
+        """Whether ownership verification is possible at all on this platform.
+
+        Root-Me and TryHackMe expose nothing the bot can check, so their links
+        are 'unverifiable', not 'unverified': they must never carry the ⚠
+        marker, and require_verified must not filter them out (that would empty
+        those boards entirely).
+        """
+        adapter = self._adapters.get(platform)
+        return bool(adapter and getattr(adapter, "supports_verification", False))
+
     async def platform_board(
         self,
         guild_id: int,
@@ -67,6 +78,7 @@ class BoardService:
     ) -> Board:
         as_of = as_of or utcnow()
         start = period_start(period, as_of)
+        flag = self._verifiable(platform)
         async with self._db.session() as session:
             links = await self._guild_links(session, guild_id, platform)
             rows = []
@@ -77,7 +89,7 @@ class BoardService:
                         discord_user_id=link.discord_user_id,
                         label=link.platform_username,
                         value=value,
-                        verified=link.verified,
+                        verified=link.verified or not flag,
                         parts={platform.value: value},
                     )
                 )
@@ -117,13 +129,17 @@ class BoardService:
         async with self._db.session() as session:
             for platform in self._adapters.platforms:
                 links = await self._guild_links(session, guild_id, platform)
+                flag = self._verifiable(platform)
                 values: dict[int, float] = {}
                 for link in links:
                     values[link.discord_user_id] = float(
                         await self._link_delta(session, link.id, start, as_of)
                     )
+                    # An unverifiable link (Root-Me, THM) can't drag a member's
+                    # composite row into ⚠ — only a verifiable-but-unverified one.
+                    ok = link.verified or not flag
                     verified_by_user[link.discord_user_id] = (
-                        verified_by_user.get(link.discord_user_id, True) and link.verified
+                        verified_by_user.get(link.discord_user_id, True) and ok
                     )
                 platform_values[platform.value] = values
             claim_totals = await self._claim_totals(session, guild_id, start, as_of)
@@ -161,7 +177,7 @@ class BoardService:
                 AccountLink.platform == platform.value,
             )
         )
-        if guild is not None and guild.require_verified:
+        if guild is not None and guild.require_verified and self._verifiable(platform):
             stmt = stmt.where(AccountLink.verified.is_(True))
         return list(await session.scalars(stmt))
 
